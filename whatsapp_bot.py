@@ -192,7 +192,7 @@ async def receive(request: Request):
 
     return "EVENT_RECEIVED", 200
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "POST", "HEAD"])
 async def root():
     return {"message": "Hello World"}
 
