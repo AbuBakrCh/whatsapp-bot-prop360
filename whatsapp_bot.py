@@ -192,6 +192,9 @@ async def receive(request: Request):
 
     return "EVENT_RECEIVED", 200
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
 
 if __name__ == "__main__":
     print("🚀 WhatsApp bot running at /webhook")
