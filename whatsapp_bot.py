@@ -185,6 +185,7 @@ async def receive(request: Request):
                 "to": from_number,
                 "text": {"body": rag_response},
             }
+            print("📩 Output message:", payload)
             requests.post(url, headers=headers, json=payload)
 
     except Exception as e:
