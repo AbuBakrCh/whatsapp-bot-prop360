@@ -5,14 +5,18 @@ from time import time
 from fastapi import FastAPI, Request
 import uvicorn
 import requests
+from dotenv import load_dotenv
+import os
+import cohere
 
-# --- Configuration ---
-COHERE_API_KEY = "43ne7RbinxXERVHw6P04l2ErDWbAZrEw9ZU6VlSq"
+load_dotenv()
+
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 cohere_client = cohere.Client(COHERE_API_KEY)
 
 WHATSAPP_ACCESS_TOKEN = "EAAJ6jOg3B0QBPnxguL4NLI0MvnQAcVMvBObceiNNDLEa62J7Gbs42HbKFoWFKG0yuXEDKwzFMzenZB1shtST5Ypyl16fiCZCG5WhDh7GtzqlveZCQQ5VKFRVmXZBDIKZA9JM9AoocCBPRFNNmUkZCb3PJu0gDzBw9bumSthl99gkLtY1nQ1sHBthjts11mB8f4oqM92yyUsgcXM7GiEZBruZA01CSrTCZBLajshq87YgZC"
 PHONE_NUMBER_ID = "817065164826591"
-VERIFY_TOKEN = "my_whatsapp_secret"
 
 # --- Load Dataset ---
 def load_data():
