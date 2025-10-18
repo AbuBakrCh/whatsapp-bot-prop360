@@ -8,6 +8,8 @@ import requests
 from dotenv import load_dotenv
 import os
 import cohere
+import asyncio
+import random
 
 load_dotenv()
 
@@ -15,7 +17,7 @@ COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 cohere_client = cohere.Client(COHERE_API_KEY)
 
-WHATSAPP_ACCESS_TOKEN = "EAAV1KZBJ8LjQBPpWnIvRz3yGowPdcIkJkcXU06IuywopIp0r9RpJtA2g9aSBL47oB6ZBeZACfFhBV8VZApk4UdHIkvWL1HOUv0oIrI4GE77J2uDqeDyP7pIlcuHizEHzS9eoh29xpFw2j7o8boEZAtpY2Eya8l04tDw4elk2JMrZChLzU8PW0AsaoV46ZBE0oUCjCkFWm7w8sADMZCb0RcoB1LkJhoDWbPOSir9xdokNNA9wTgCs"
+WHATSAPP_ACCESS_TOKEN = "EAAV1KZBJ8LjQBPlBbRUM40BIVxaoqgxYFD8dSOxjSTFAPidDFzWZC4baDCIkiK2CuphPIEjiphDhO6tZCnlShh2ywJZATImx81okrcpHpCxioAXZBvZBHy8wGfDW6uth8ZBZCoXRxi039wCHddtjNrbfhbqcnEFAtR1cZBo1yylVlpk41M6ZAWtAczyWbyWV9DvfXuvgZDZD"
 PHONE_NUMBER_ID = "758519787354028"
 
 # --- Load Dataset ---
@@ -93,12 +95,14 @@ def generate_rag_response(user_query, results, chat_history):
         history_str = ""
 
     system_prompt = (
-        "Sen Türkçe konuşan profesyonel bir emlak danışmanısın. "
-        "Verilen bağlamı ve konuşma geçmişini kullanarak "
-        "kısa, net ve doğal bir yanıt ver. "
+        "Sen Türkçe konuşan, profesyonel ama samimi bir emlak danışmanısın. "
+        "Yanıtlarında doğal, içten ve insana benzeyen bir dil kullan. "
+        "Cümlelerini kısa tut — genellikle birkaç kelime ya da tek bir kısa cümle kadar. "
+        "Yapay zekâ gibi değil, bir insan gibi konuş: günlük kelimeler, doğal ifadeler, sade yazım. "
+        "Verilen bağlam ve konuşma geçmişine dayanarak yanıt ver. "
         "Eğer emin değilsen 'Bundan emin değilim.' de. "
-        "Samimi, güven veren ve ikna edici bir üslup kullan."
-        "Kendi bilgi bankanızdan cevap vermeyin. Herhangi bir bilgi için yalnızca bağlama güvenin. BU GERÇEKTEN ÖNEMLİ."
+        "Kendi bilgi bankanı kullanma; yalnızca verilen bağlama güven. "
+        "Bu çok önemli — bağlam dışında tahmin yürütme veya yeni bilgi üretme."
     )
 
     user_prompt = (
@@ -144,6 +148,10 @@ async def verify(request: Request):
 async def receive(request: Request):
     data = await request.json()
     print("📩 Incoming message:", data)
+
+    delay = random.uniform(5, 10)
+    print(f"⏳ Simulating human typing... waiting {delay:.2f} seconds")
+    await asyncio.sleep(delay)
 
     try:
         entry = data["entry"][0]["changes"][0]["value"]
