@@ -1,28 +1,50 @@
+import os
+import random
+import asyncio
+from time import time
+
 import pandas as pd
 import numpy as np
 import cohere
-from time import time
+import requests
+import httpx
 from fastapi import FastAPI, Request
 import uvicorn
-import requests
 from dotenv import load_dotenv
-import os
-import cohere
-import asyncio
-import random
 
+# --- Load Environment ---
 load_dotenv()
 
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 cohere_client = cohere.Client(COHERE_API_KEY)
 
-WHATSAPP_ACCESS_TOKEN = "EAAV1KZBJ8LjQBPlBbRUM40BIVxaoqgxYFD8dSOxjSTFAPidDFzWZC4baDCIkiK2CuphPIEjiphDhO6tZCnlShh2ywJZATImx81okrcpHpCxioAXZBvZBHy8wGfDW6uth8ZBZCoXRxi039wCHddtjNrbfhbqcnEFAtR1cZBo1yylVlpk41M6ZAWtAczyWbyWV9DvfXuvgZDZD"
+WHATSAPP_ACCESS_TOKEN = "EAAQYybD4vYYBPsIPcotyc9voczABjqwZC09ANq0rl9ZA4tRK0a188YBvBYTSmFeiEQHXALNY3P9NrK0DZBZBXUhDicSSL9gbMCPl9w5KcCZBzqIVSMzXjcXeWQmA58qTZBBrIguqw6189HFam5wcYWOhhR9ZARp56sWZAu6ZArDk7BzKfIc02S4gnPEvnFpTIO1mWbQZDZD"
 PHONE_NUMBER_ID = "758519787354028"
 
+# --- Google Drive CSV File ---
+DRIVE_FILE_ID = "1M1-J99G936xLo8m8rWXvcvtxpj1E8ZuC"
+CSV_URL = f"https://drive.google.com/uc?export=download&id={DRIVE_FILE_ID}"
+DATASET_PATH = "faq_tr.csv"
+
+ADMIN_NUMBERS = ["306980102740", "923244181389"]
+
+bot_active = True
+
+# --- Download CSV from Google Drive ---
+def download_csv():
+    print("📥 Downloading dataset from Google Drive...")
+    response = requests.get(CSV_URL)
+    response.raise_for_status()
+    with open(DATASET_PATH, "wb") as f:
+        f.write(response.content)
+    print("✅ Dataset downloaded successfully")
+
 # --- Load Dataset ---
-def load_data():
-    df = pd.read_csv("faq_tr.csv")
+def load_dataset():
+    if not os.path.exists(DATASET_PATH):
+        download_csv()
+    df = pd.read_csv(DATASET_PATH)
     df = df.dropna(subset=["OLASI SORULAR - PINAR AGENT 35 YAŞINDA ATİNADA YAŞIYOR", "CEVAPLAR "])
     df = df.reset_index(drop=True)
     return df
@@ -50,8 +72,7 @@ def build_index(df):
     print(f"✅ Encoded {len(texts)} entries in {elapsed:.2f} seconds")
     return embeddings, texts
 
-
-# --- Search with Cohere Embeddings ---
+# --- Semantic Search ---
 def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
     query_vec = cohere_client.embed(
         texts=[user_query],
@@ -77,8 +98,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
         return None, results
     return results[0][1], results
 
-
-# --- RAG Generation (Cohere Command Model) ---
+# --- RAG Response Generation ---
 def generate_rag_response(user_query, results, chat_history):
     if results and results[0][2] > 0.5:
         context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
@@ -89,10 +109,10 @@ def generate_rag_response(user_query, results, chat_history):
         )
         return polite_reply, "⚠️ Veri kümesinde ilgili içerik bulunamadı."
 
-    if chat_history:
-        history_str = "\n".join([f"Kullanıcı: {u}\nAsistan: {a}" for u, a, _ in chat_history[-3:]])
-    else:
-        history_str = ""
+    history_str = (
+        "\n".join([f"Kullanıcı: {u}\nAsistan: {a}" for u, a, _ in chat_history[-3:]])
+        if chat_history else ""
+    )
 
     system_prompt = (
         "Sen Türkçe konuşan, profesyonel ama samimi bir emlak danışmanısın. "
@@ -122,16 +142,14 @@ def generate_rag_response(user_query, results, chat_history):
     except Exception as e:
         return f"⚠️ Hata: {str(e)}", context
 
-
-# --- Load everything once ---
-df = load_data()
+# --- Initial Load ---
+download_csv()
+df = load_dataset()
 embeddings, texts = build_index(df)
-chat_sessions = {}  # store conversation history per WhatsApp user
-
+chat_sessions = {}
 
 # --- FastAPI App ---
 app = FastAPI()
-
 
 @app.get("/webhook")
 async def verify(request: Request):
@@ -146,55 +164,85 @@ async def verify(request: Request):
 
 @app.post("/webhook")
 async def receive(request: Request):
+    global df, embeddings, texts
+
     data = await request.json()
     print("📩 Incoming message:", data)
-
-    delay = random.uniform(5, 10)
-    print(f"⏳ Simulating human typing... waiting {delay:.2f} seconds")
-    await asyncio.sleep(delay)
 
     try:
         entry = data["entry"][0]["changes"][0]["value"]
         messages = entry.get("messages")
-        if messages:
-            msg = messages[0]
-            from_number = msg["from"]
-            text = msg["text"]["body"]
+        if not messages:
+            return "EVENT_RECEIVED", 200
 
-            # retrieve chat history for this user
-            chat_history = chat_sessions.get(from_number, [])
+        msg = messages[0]
+        from_number = msg["from"]
+        text = msg["text"]["body"].strip().lower()
 
-            # same logic as before
-            answer, results = semantic_search(text, df, embeddings, texts)
-            if answer is None:
-                rag_response = (
-                    "Bu konuda elimde net bir bilgi bulunmuyor. "
-                    "Ben yalnızca **Yunanistan Golden Visa** programı ile ilgili sorulara yardımcı olabiliyorum. 🇬🇷 "
-                    "Lütfen sorunuz bu konuyla ilgiliyse tekrar yazın. 😊"
-                )
-                context_used = "⚠️ Veri kümesinde ilgili içerik bulunamadı."
-            else:
-                rag_response, context_used = generate_rag_response(
-                    text, results, chat_history
-                )
+        # --- Admin-only stop/start commands ---
+        if from_number in ADMIN_NUMBERS:
+            if text == "stop":
+                bot_active = False
+                await send_whatsapp_message(from_number, "⏸ Bot paused globally.")
+                print("🚫 Bot paused by admin.")
+                return "BOT_PAUSED", 200
 
-            # save history
-            chat_history.append((text, rag_response, context_used))
-            chat_sessions[from_number] = chat_history
+            if text == "start":
+                bot_active = True
+                await send_whatsapp_message(from_number, "▶️ Bot resumed globally.")
+                print("✅ Bot resumed by admin.")
+                return "BOT_RESUMED", 200
 
-            # --- Send reply to WhatsApp ---
-            url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
-            headers = {
-                "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": from_number,
-                "text": {"body": rag_response},
-            }
-            print("📩 Output message:", payload)
-            requests.post(url, headers=headers, json=payload)
+            if text == "refresh":
+                print("🔄 Admin requested dataset refresh...")
+                download_csv()
+                df = load_dataset()
+                embeddings, texts = build_index(df)
+                await send_whatsapp_message(from_number, "🔁 Dataset refreshed successfully.")
+                print("✅ Dataset refreshed.")
+                return "REFRESH_OK", 200
+
+        # --- If bot is paused globally ---
+        if not bot_active:
+            print("🤖 Bot is paused — ignoring messages.")
+            return "BOT_INACTIVE", 200
+
+        # --- Regular user flow ---
+        delay = random.uniform(5, 10)
+        print(f"⏳ Simulating human typing... waiting {delay:.2f} seconds")
+        await asyncio.sleep(delay)
+
+        chat_history = chat_sessions.get(from_number, [])
+        answer, results = semantic_search(text, df, embeddings, texts)
+
+        if answer is None:
+            rag_response = (
+                "Bu konuda elimde net bir bilgi bulunmuyor. "
+                "Ben yalnızca **Yunanistan Golden Visa** programı ile ilgili sorulara yardımcı olabiliyorum. 🇬🇷 "
+                "Lütfen sorunuz bu konuyla ilgiliyse tekrar yazın. 😊"
+            )
+            context_used = "⚠️ Veri kümesinde ilgili içerik bulunamadı."
+        else:
+            rag_response, context_used = generate_rag_response(
+                text, results, chat_history
+            )
+
+        chat_history.append((text, rag_response, context_used))
+        chat_sessions[from_number] = chat_history
+
+        # --- Send reply to WhatsApp ---
+        url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+        headers = {
+            "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": from_number,
+            "text": {"body": rag_response},
+        }
+        print("📩 Output message:", payload)
+        requests.post(url, headers=headers, json=payload)
 
     except Exception as e:
         print("⚠️ Error handling message:", e)
@@ -204,6 +252,33 @@ async def receive(request: Request):
 @app.api_route("/", methods=["GET", "POST", "HEAD"])
 async def root():
     return {"message": "Hello World"}
+
+@app.post("/reload")
+async def reload_data():
+    global df, embeddings, texts
+    download_csv()
+    df = load_dataset()
+    embeddings, texts = build_index(df)
+    return {"status": "✅ Dataset reloaded successfully"}
+
+
+# --- Helper for sending WhatsApp messages ---
+async def send_whatsapp_message(to, message):
+    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "text": {"body": message},
+    }
+
+    print("📤 Sending message:", payload)
+    async with httpx.AsyncClient() as client:
+        await client.post(url, headers=headers, json=payload)
+
 
 if __name__ == "__main__":
     print("🚀 WhatsApp bot running at /webhook")
