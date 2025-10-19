@@ -11,6 +11,7 @@ import httpx
 from fastapi import FastAPI, Request
 import uvicorn
 from dotenv import load_dotenv
+from urllib.parse import quote
 
 # --- Load Environment ---
 load_dotenv()
@@ -33,22 +34,21 @@ bot_active = True
 
 # --- Load Dataset from Google Sheets ---
 def load_dataset_from_google_sheet(sheet_id):
-    print("📥 Downloading dataset from Google Sheets...")
-    sheet_url_base = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet="
-    dfs = []
+    # List all your sheet/tab names exactly as they appear in Google Sheets
+    sheets = ["handshaking", "golden visa"]
+    all_data = []
 
-    for name in SHEET_NAMES:
-        print(f"🔹 Loading sheet: {name}")
-        url = f"{sheet_url_base}{name}"
+    for sheet_name in sheets:
+        safe_name = quote(sheet_name)  # ✅ Encodes spaces etc.
+        print(f"📄 Loading sheet: {sheet_name}")
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={safe_name}"
         df = pd.read_csv(url)
-        df = df.dropna(subset=["questions", "answers"])
-        df["sheet_name"] = name
-        dfs.append(df)
+        df["source_sheet"] = sheet_name
+        all_data.append(df)
 
-    combined_df = pd.concat(dfs, ignore_index=True)
-    print(f"✅ Loaded {len(combined_df)} total rows from {len(SHEET_NAMES)} sheets")
+    combined_df = pd.concat(all_data, ignore_index=True)
+    print(f"✅ Loaded {len(combined_df)} rows from {len(sheets)} sheets.")
     return combined_df
-
 
 # --- Build Embedding Index (Cohere only) ---
 def build_index(df):
