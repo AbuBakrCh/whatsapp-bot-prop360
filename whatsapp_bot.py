@@ -22,39 +22,40 @@ cohere_client = cohere.Client(COHERE_API_KEY)
 WHATSAPP_ACCESS_TOKEN = "EAAQYybD4vYYBPkO0ZCsdI7j4i8qPwkc0p6yyqcJILxYQkrj3MB9PuHXHa7ZAUCaWJLocryOdfHKkCV23LZAWxlMWFxzu9mUCQQhAJugijcTFkcNMzfCaPbT6hDqyaW4xkjinvtMxziTVhMiOXBOVMHe64OrRQEahCZBzENChcAeZAdug9sZBaHltSAYbSbDNdkQgZDZD"
 PHONE_NUMBER_ID = "836070512923409"
 
-# --- Google Drive CSV File ---
-DRIVE_FILE_ID = "1M1-J99G936xLo8m8rWXvcvtxpj1E8ZuC"
-CSV_URL = f"https://drive.google.com/uc?export=download&id={DRIVE_FILE_ID}"
-DATASET_PATH = "faq_tr.csv"
+# --- Google Sheets (Excel-style) File ---
+SHEET_ID = "1FO8Gb703ipZrWrSxTe2XTsBnv345_jwtJHBycLA-4Vo"
+SHEET_NAMES = ["handshaking", "golden visa"]  # 👈 Add more if you have
 
 ADMIN_NUMBERS = ["306980102740", "923244181389"]
 
 bot_active = True
 
-# --- Download CSV from Google Drive ---
-def download_csv():
-    print("📥 Downloading dataset from Google Drive...")
-    response = requests.get(CSV_URL)
-    response.raise_for_status()
-    with open(DATASET_PATH, "wb") as f:
-        f.write(response.content)
-    print("✅ Dataset downloaded successfully")
 
-# --- Load Dataset ---
-def load_dataset():
-    if not os.path.exists(DATASET_PATH):
-        download_csv()
-    df = pd.read_csv(DATASET_PATH)
-    df = df.dropna(subset=["OLASI SORULAR - PINAR AGENT 35 YAŞINDA ATİNADA YAŞIYOR", "CEVAPLAR "])
-    df = df.reset_index(drop=True)
-    return df
+# --- Load Dataset from Google Sheets ---
+def load_dataset_from_google_sheet(sheet_id):
+    print("📥 Downloading dataset from Google Sheets...")
+    sheet_url_base = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet="
+    dfs = []
+
+    for name in SHEET_NAMES:
+        print(f"🔹 Loading sheet: {name}")
+        url = f"{sheet_url_base}{name}"
+        df = pd.read_csv(url)
+        df = df.dropna(subset=["questions", "answers"])
+        df["sheet_name"] = name
+        dfs.append(df)
+
+    combined_df = pd.concat(dfs, ignore_index=True)
+    print(f"✅ Loaded {len(combined_df)} total rows from {len(SHEET_NAMES)} sheets")
+    return combined_df
+
 
 # --- Build Embedding Index (Cohere only) ---
 def build_index(df):
     print("📦 Encoding dataset with Cohere Multilingual v3.0...")
     start = time()
 
-    texts = df["OLASI SORULAR - PINAR AGENT 35 YAŞINDA ATİNADA YAŞIYOR"].astype(str).tolist()
+    texts = df["questions"].astype(str).tolist()
     all_embeddings = []
 
     batch_size = 50
@@ -72,6 +73,7 @@ def build_index(df):
     print(f"✅ Encoded {len(texts)} entries in {elapsed:.2f} seconds")
     return embeddings, texts
 
+
 # --- Semantic Search ---
 def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
     query_vec = cohere_client.embed(
@@ -88,8 +90,8 @@ def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
     top_idx = np.argsort(sim_scores)[::-1][:top_k]
     results = []
     for i in top_idx:
-        q = df.iloc[i]["OLASI SORULAR - PINAR AGENT 35 YAŞINDA ATİNADA YAŞIYOR"]
-        a = df.iloc[i]["CEVAPLAR "]
+        q = df.iloc[i]["questions"]
+        a = df.iloc[i]["answers"]
         s = float(sim_scores[i])
         results.append((q, a, s))
 
@@ -97,6 +99,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
     if best_score < threshold:
         return None, results
     return results[0][1], results
+
 
 # --- RAG Response Generation ---
 def generate_rag_response(user_query, results, chat_history):
@@ -142,14 +145,16 @@ def generate_rag_response(user_query, results, chat_history):
     except Exception as e:
         return f"⚠️ Hata: {str(e)}", context
 
+
 # --- Initial Load ---
-download_csv()
-df = load_dataset()
+df = load_dataset_from_google_sheet(SHEET_ID)
 embeddings, texts = build_index(df)
 chat_sessions = {}
 
+
 # --- FastAPI App ---
 app = FastAPI()
+
 
 @app.get("/webhook")
 async def verify(request: Request):
@@ -196,8 +201,7 @@ async def receive(request: Request):
 
             if text == "refresh":
                 print("🔄 Admin requested dataset refresh...")
-                download_csv()
-                df = load_dataset()
+                df = load_dataset_from_google_sheet(SHEET_ID)
                 embeddings, texts = build_index(df)
                 await send_whatsapp_message(from_number, "🔁 Dataset refreshed successfully.")
                 print("✅ Dataset refreshed.")
@@ -250,15 +254,16 @@ async def receive(request: Request):
 
     return "EVENT_RECEIVED", 200
 
+
 @app.api_route("/", methods=["GET", "POST", "HEAD"])
 async def root():
     return {"message": "Hello World"}
 
+
 @app.post("/reload")
 async def reload_data():
     global df, embeddings, texts
-    download_csv()
-    df = load_dataset()
+    df = load_dataset_from_google_sheet(SHEET_ID)
     embeddings, texts = build_index(df)
     return {"status": "✅ Dataset reloaded successfully"}
 
