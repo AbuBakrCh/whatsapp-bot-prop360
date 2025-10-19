@@ -75,7 +75,7 @@ def build_index(df):
 
 
 # --- Semantic Search ---
-def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
+def semantic_search(user_query, df, embeddings, texts, top_k=1, threshold=0.5):
     query_vec = cohere_client.embed(
         texts=[user_query],
         model="embed-multilingual-v3.0",
@@ -103,7 +103,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=3, threshold=0.5):
 
 # --- RAG Response Generation ---
 def generate_rag_response(user_query, results, chat_history):
-    if results and results[0][2] > 0.5:
+    if results and results[0][2] > 0.6:
         context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
     else:
         polite_reply = (
