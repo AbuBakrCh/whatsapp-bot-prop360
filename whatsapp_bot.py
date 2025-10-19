@@ -165,6 +165,7 @@ async def verify(request: Request):
 @app.post("/webhook")
 async def receive(request: Request):
     global df, embeddings, texts
+    global bot_active
 
     data = await request.json()
     print("📩 Incoming message:", data)
