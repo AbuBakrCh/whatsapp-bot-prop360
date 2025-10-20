@@ -78,6 +78,8 @@ def build_index(df):
 
 # --- Semantic Search ---
 def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
+    print(f"\n🔎 Semantic search started for query: '{user_query}'")
+
     query_vec = openai.embeddings.create(
         input=[user_query],
         model="text-embedding-3-small"
@@ -90,15 +92,23 @@ def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
 
     top_idx = np.argsort(sim_scores)[::-1][:top_k]
     results = []
+
+    print("📊 Top similarity results:")
     for i in top_idx:
         q = df.iloc[i]["questions"]
         a = df.iloc[i]["answers"]
         s = float(sim_scores[i])
         results.append((q, a, s))
+        print(f"  → Q: {q[:80]}... | Score={s:.4f}")
 
     best_score = results[0][2] if results else 0.0
+    print(f"🏁 Best score: {best_score:.4f} | Threshold: {threshold}")
+
     if best_score < threshold:
+        print("⚠️ No match exceeded the threshold.\n")
         return None, results
+
+    print(f"✅ Match found above threshold: '{results[0][0]}' (Score={best_score:.4f})\n")
     return results[0][1], results
 
 
