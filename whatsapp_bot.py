@@ -51,12 +51,28 @@ def load_dataset_from_google_sheet(sheet_id):
     combined_df = pd.concat(all_data, ignore_index=True)
     print(f"✅ Loaded {len(combined_df)} rows from {len(SHEET_NAMES)} sheets.")
 
-    print("📄 Loading sheet: system prompt")
+    # Load system prompt (only cell A1)
+    print("📄 Loading sheet: prompt")
     system_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=prompt"
-    prompt_df = pd.read_csv(system_url)
-    system_prompt_text = " ".join(prompt_df.iloc[:, 0].astype(str).tolist()).strip()
-    print("🧠 Loaded system prompt from Google Sheet.")
-    print(system_prompt_text)
+    prompt_df = pd.read_csv(system_url, header=None, dtype=str)
+
+    if not prompt_df.empty:
+        system_prompt_text = str(prompt_df.iloc[0, 0]).strip()
+        print("🧠 Loaded system prompt from Google Sheet:")
+        print(system_prompt_text)
+    else:
+        system_prompt_text = (
+            "Sen profesyonel ama samimi bir emlak danışmanısın. "
+            "Doğal, içten ve insana benzeyen bir dil kullan; yapay veya ezberlenmiş gibi konuşma. "
+            "Cevaplarını kısa, açık ve dostça tut — tıpkı bir insanla konuşuyormuşsun gibi. "
+            "Yanıtlarını yalnızca verilen 'Bağlam' (context) içindeki bilgilere dayanarak oluştur. "
+            "Bağlamda ilgili bilgi varsa, onu doğal şekilde kullanarak cevap ver. "
+            "Bağlamda tam bir yanıt yoksa, genel bir ifade ile yardımcı olmaya çalış ama tahmin yürütme veya yeni bilgi uydurma. "
+            "Eğer gerçekten emin değilsen, 'Bundan emin değilim.' diyebilirsin. "
+            "Kendi bilgi bankanı veya dış kaynakları kullanma — sadece verilen bağlama güven. "
+            "Kullanıcının sorduğu dili algıla ve cevabı aynı dilde ver (örnek: soru İngilizce ise yanıt da İngilizce olmalı)."
+        )
+        print("⚠️ Warning: 'prompt' sheet is empty. Using default prompt.")
 
     return combined_df
 
