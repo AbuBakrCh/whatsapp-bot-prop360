@@ -5,7 +5,7 @@ from time import time
 
 import pandas as pd
 import numpy as np
-import openai
+import cohere
 import requests
 import httpx
 from fastapi import FastAPI, Request
@@ -16,16 +16,16 @@ from urllib.parse import quote
 # --- Load Environment ---
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-openai.api_key = OPENAI_API_KEY
+cohere_client = cohere.Client(COHERE_API_KEY)
 
 WHATSAPP_ACCESS_TOKEN = "EAAQYybD4vYYBPkO0ZCsdI7j4i8qPwkc0p6yyqcJILxYQkrj3MB9PuHXHa7ZAUCaWJLocryOdfHKkCV23LZAWxlMWFxzu9mUCQQhAJugijcTFkcNMzfCaPbT6hDqyaW4xkjinvtMxziTVhMiOXBOVMHe64OrRQEahCZBzENChcAeZAdug9sZBaHltSAYbSbDNdkQgZDZD"
 PHONE_NUMBER_ID = "836070512923409"
 
 # --- Google Sheets (Excel-style) File ---
 SHEET_ID = "1FO8Gb703ipZrWrSxTe2XTsBnv345_jwtJHBycLA-4Vo"
-SHEET_NAMES = ["handshaking", "golden visa"]
+SHEET_NAMES = ["handshaking", "golden visa"]  # 👈 Add more if you have
 
 ADMIN_NUMBERS = ["306980102740", "923244181389"]
 
@@ -34,10 +34,12 @@ bot_active = True
 
 # --- Load Dataset from Google Sheets ---
 def load_dataset_from_google_sheet(sheet_id):
+    # List all your sheet/tab names exactly as they appear in Google Sheets
+    sheets = ["handshaking", "golden visa"]
     all_data = []
 
-    for sheet_name in SHEET_NAMES:
-        safe_name = quote(sheet_name)
+    for sheet_name in sheets:
+        safe_name = quote(sheet_name)  # ✅ Encodes spaces etc.
         print(f"📄 Loading sheet: {sheet_name}")
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={safe_name}"
         df = pd.read_csv(url)
@@ -45,13 +47,12 @@ def load_dataset_from_google_sheet(sheet_id):
         all_data.append(df)
 
     combined_df = pd.concat(all_data, ignore_index=True)
-    print(f"✅ Loaded {len(combined_df)} rows from {len(SHEET_NAMES)} sheets.")
+    print(f"✅ Loaded {len(combined_df)} rows from {len(sheets)} sheets.")
     return combined_df
 
-
-# --- Build Embedding Index (OpenAI) ---
+# --- Build Embedding Index (Cohere only) ---
 def build_index(df):
-    print("📦 Encoding dataset with OpenAI embeddings...")
+    print("📦 Encoding dataset with Cohere Multilingual v3.0...")
     start = time()
 
     texts = df["questions"].astype(str).tolist()
@@ -60,12 +61,12 @@ def build_index(df):
     batch_size = 50
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
-        response = openai.embeddings.create(
-            input=batch,
-            model="text-embedding-3-small"
+        response = cohere_client.embed(
+            texts=batch,
+            model="embed-multilingual-v3.0",
+            input_type="search_document"
         )
-        batch_embeddings = [d.embedding for d in response.data]
-        all_embeddings.extend(batch_embeddings)
+        all_embeddings.extend(response.embeddings)
 
     embeddings = np.array(all_embeddings, dtype="float32")
     elapsed = time() - start
@@ -74,11 +75,12 @@ def build_index(df):
 
 
 # --- Semantic Search ---
-def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
-    query_vec = openai.embeddings.create(
-        input=[user_query],
-        model="text-embedding-3-small"
-    ).data[0].embedding
+def semantic_search(user_query, df, embeddings, texts, top_k=1, threshold=0.5):
+    query_vec = cohere_client.embed(
+        texts=[user_query],
+        model="embed-multilingual-v3.0",
+        input_type="search_query"
+    ).embeddings[0]
 
     query_vec = np.array(query_vec, dtype="float32")
     sim_scores = np.dot(embeddings, query_vec) / (
@@ -101,7 +103,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
 
 # --- RAG Response Generation ---
 def generate_rag_response(user_query, results, chat_history):
-    if results and results[0][2] > 0.5:
+    if results and results[0][2] > 0.6:
         context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
     else:
         polite_reply = (
@@ -124,7 +126,6 @@ def generate_rag_response(user_query, results, chat_history):
         "Eğer emin değilsen 'Bundan emin değilim.' de. "
         "Kendi bilgi bankanı kullanma; yalnızca verilen bağlama güven. "
         "Bu çok önemli — bağlam dışında tahmin yürütme veya yeni bilgi üretme."
-        "Önemli: Kullanıcının sorduğu soruyu hangi dilde yazdıysa, yanıtını da o dilde ver."
     )
 
     user_prompt = (
@@ -134,15 +135,13 @@ def generate_rag_response(user_query, results, chat_history):
     )
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.1,
+        response = cohere_client.chat(
+            model="command-a-03-2025",
+            message=user_prompt,
+            preamble=system_prompt,
+            temperature=0.01,
         )
-        return response.choices[0].message.content.strip(), context
+        return response.text.strip(), context
     except Exception as e:
         return f"⚠️ Hata: {str(e)}", context
 
@@ -186,7 +185,7 @@ async def receive(request: Request):
         from_number = msg["from"]
         text = msg["text"]["body"].strip().lower()
 
-        # --- Admin-only stop/start/refresh ---
+        # --- Admin-only stop/start commands ---
         if from_number in ADMIN_NUMBERS:
             if text == "stop":
                 bot_active = False
