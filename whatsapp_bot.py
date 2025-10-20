@@ -114,6 +114,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
 
 # --- RAG Response Generation ---
 def generate_rag_response(user_query, results, chat_history):
+    print("🔧 Threshold used inside generate_rag_response:", global_threshold["value"])
     if results and results[0][2] > global_threshold["value"]:
         context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
     else:
