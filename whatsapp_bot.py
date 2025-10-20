@@ -32,6 +32,7 @@ ADMIN_NUMBERS = ["306980102740", "923244181389"]
 bot_active = True
 global_threshold = {"value": 0.5}
 global_top_k = {"value": 2}
+global_temperature = {"value": 0.1}
 
 
 # --- Load Dataset from Google Sheets ---
@@ -103,7 +104,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
 
 # --- RAG Response Generation ---
 def generate_rag_response(user_query, results, chat_history):
-    if results and results[0][2] > 0.5:
+    if results and results[0][2] > global_threshold["value"]:
         context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
     else:
         polite_reply = (
@@ -142,7 +143,7 @@ def generate_rag_response(user_query, results, chat_history):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.1,
+            temperature=global_temperature["value"],
         )
         return response.choices[0].message.content.strip(), context
     except Exception as e:
@@ -211,6 +212,16 @@ async def receive(request: Request):
                 except ValueError:
                     await send_whatsapp_message(from_number, "⚠️ Invalid top_k format. Use like: top_k=2")
                 return "TOPK_UPDATED", 200
+
+            if text.startswith("temperature="):
+                try:
+                    new_temperature = int(text.split("=", 1)[1])
+                    global_temperature["value"] = new_temperature
+                    await send_whatsapp_message(from_number, f"✅ temperature updated to {new_temperature}")
+                    print(f"⚙️ top_k updated to {new_temperature} by admin.")
+                except ValueError:
+                    await send_whatsapp_message(from_number, "⚠️ Invalid temperature format. Use like: temperature=0.1")
+                return "TEMPERATURE_UPDATED", 200
         
             if text == "stop":
                 bot_active = False
