@@ -222,6 +222,9 @@ async def receive(request: Request):
         answer, results = semantic_search(text, df, embeddings, texts)
 
         if answer is None:
+            print("🔍 No strong match found. Top results:")
+            for q, a, s in results:
+                print(f"  → {q} (score={s:.2f})")
             rag_response = (
                 "Bu konuda elimde net bir bilgi bulunmuyor. "
                 "Ben yalnızca **Yunanistan Golden Visa** programı ile ilgili sorulara yardımcı olabiliyorum. 🇬🇷 "
