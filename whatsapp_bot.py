@@ -38,6 +38,7 @@ global_temperature = {"value": 0.1}
 # --- Load Dataset from Google Sheets ---
 def load_dataset_from_google_sheet(sheet_id):
     all_data = []
+    global system_prompt_text
 
     for sheet_name in SHEET_NAMES:
         safe_name = quote(sheet_name)
@@ -49,6 +50,13 @@ def load_dataset_from_google_sheet(sheet_id):
 
     combined_df = pd.concat(all_data, ignore_index=True)
     print(f"✅ Loaded {len(combined_df)} rows from {len(SHEET_NAMES)} sheets.")
+
+    print("📄 Loading sheet: system prompt")
+    system_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=prompt"
+    prompt_df = pd.read_csv(system_url)
+    system_prompt_text = " ".join(prompt_df.iloc[:, 0].astype(str).tolist()).strip()
+    print("🧠 Loaded system prompt from Google Sheet.")
+
     return combined_df
 
 
@@ -129,17 +137,7 @@ def generate_rag_response(user_query, results, chat_history):
         if chat_history else ""
     )
 
-    system_prompt = (
-        "Sen profesyonel ama samimi bir emlak danışmanısın. "
-        "Doğal, içten ve insana benzeyen bir dil kullan; yapay veya ezberlenmiş gibi konuşma. "
-        "Cevaplarını kısa, açık ve dostça tut — tıpkı bir insanla konuşuyormuşsun gibi. "
-        "Yanıtlarını yalnızca verilen 'Bağlam' (context) içindeki bilgilere dayanarak oluştur. "
-        "Bağlamda ilgili bilgi varsa, onu doğal şekilde kullanarak cevap ver. "
-        "Bağlamda tam bir yanıt yoksa, genel bir ifade ile yardımcı olmaya çalış ama tahmin yürütme veya yeni bilgi uydurma. "
-        "Eğer gerçekten emin değilsen, 'Bundan emin değilim.' diyebilirsin. "
-        "Kendi bilgi bankanı veya dış kaynakları kullanma — sadece verilen bağlama güven. "
-        "Kullanıcının sorduğu dili algıla ve cevabı aynı dilde ver (örnek: soru İngilizce ise yanıt da İngilizce olmalı)."
-    )
+    system_prompt = system_prompt_text
 
     user_prompt = (
         f"Geçmiş konuşma:\n{history_str}\n\n"
