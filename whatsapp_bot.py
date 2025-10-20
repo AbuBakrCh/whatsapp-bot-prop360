@@ -215,13 +215,14 @@ async def receive(request: Request):
 
             if text.startswith("temperature="):
                 try:
-                    new_temperature = int(text.split("=", 1)[1])
+                    new_temperature = float(text.split("=", 1)[1])
                     global_temperature["value"] = new_temperature
                     await send_whatsapp_message(from_number, f"✅ temperature updated to {new_temperature}")
-                    print(f"⚙️ top_k updated to {new_temperature} by admin.")
+                    print(f"⚙️ temperature updated to {new_temperature} by admin.")
                 except ValueError:
                     await send_whatsapp_message(from_number, "⚠️ Invalid temperature format. Use like: temperature=0.1")
                 return "TEMPERATURE_UPDATED", 200
+
         
             if text == "stop":
                 bot_active = False
