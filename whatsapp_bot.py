@@ -30,6 +30,8 @@ SHEET_NAMES = ["handshaking", "golden visa"]
 ADMIN_NUMBERS = ["306980102740", "923244181389"]
 
 bot_active = True
+global_threshold = {"value": 0.5}
+global_top_k = {"value": 2}
 
 
 # --- Load Dataset from Google Sheets ---
@@ -188,18 +190,40 @@ async def receive(request: Request):
 
         # --- Admin-only stop/start/refresh ---
         if from_number in ADMIN_NUMBERS:
+            # Threshold update
+            if text.startswith("threshold="):
+                try:
+                    new_threshold = float(text.split("=", 1)[1])
+                    global_threshold["value"] = new_threshold
+                    await send_whatsapp_message(from_number, f"✅ Threshold updated to {new_threshold}")
+                    print(f"⚙️ Threshold updated to {new_threshold} by admin.")
+                except ValueError:
+                    await send_whatsapp_message(from_number, "⚠️ Invalid threshold format. Use like: threshold=0.35")
+                return "THRESHOLD_UPDATED", 200
+        
+            # Top_k update
+            if text.startswith("top_k="):
+                try:
+                    new_top_k = int(text.split("=", 1)[1])
+                    global_top_k["value"] = new_top_k
+                    await send_whatsapp_message(from_number, f"✅ top_k updated to {new_top_k}")
+                    print(f"⚙️ top_k updated to {new_top_k} by admin.")
+                except ValueError:
+                    await send_whatsapp_message(from_number, "⚠️ Invalid top_k format. Use like: top_k=2")
+                return "TOPK_UPDATED", 200
+        
             if text == "stop":
                 bot_active = False
                 await send_whatsapp_message(from_number, "⏸ Bot paused globally.")
                 print("🚫 Bot paused by admin.")
                 return "BOT_PAUSED", 200
-
+        
             if text == "start":
                 bot_active = True
                 await send_whatsapp_message(from_number, "▶️ Bot resumed globally.")
                 print("✅ Bot resumed by admin.")
                 return "BOT_RESUMED", 200
-
+        
             if text == "refresh":
                 print("🔄 Admin requested dataset refresh...")
                 df = load_dataset_from_google_sheet(SHEET_ID)
@@ -207,7 +231,7 @@ async def receive(request: Request):
                 await send_whatsapp_message(from_number, "🔁 Dataset refreshed successfully.")
                 print("✅ Dataset refreshed.")
                 return "REFRESH_OK", 200
-
+                
         # --- If bot is paused globally ---
         if not bot_active:
             print("🤖 Bot is paused — ignoring messages.")
@@ -220,6 +244,9 @@ async def receive(request: Request):
 
         chat_history = chat_sessions.get(from_number, [])
         answer, results = semantic_search(text, df, embeddings, texts)
+
+        answer, results = semantic_search(text, df, embeddings, texts, top_k=global_top_k["value"], threshold=global_threshold["value"])
+
 
         if answer is None:
             print("🔍 No strong match found. Top results:")
