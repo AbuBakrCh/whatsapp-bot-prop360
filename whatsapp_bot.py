@@ -56,6 +56,7 @@ def load_dataset_from_google_sheet(sheet_id):
     prompt_df = pd.read_csv(system_url)
     system_prompt_text = " ".join(prompt_df.iloc[:, 0].astype(str).tolist()).strip()
     print("🧠 Loaded system prompt from Google Sheet.")
+    print(system_prompt_text)
 
     return combined_df
 
