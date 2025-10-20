@@ -233,6 +233,17 @@ async def receive(request: Request):
                     await send_whatsapp_message(from_number, "⚠️ Invalid temperature format. Use like: temperature=0.1")
                 return "TEMPERATURE_UPDATED", 200
 
+            if text == "status":
+                status_message = (
+                    f"📊 *Current Bot Configuration:*\n"
+                    f"• Threshold: {global_threshold['value']}\n"
+                    f"• Top K: {global_top_k['value']}\n"
+                    f"• Temperature: {global_temperature['value']}\n"
+                    f"• Bot Active: {'✅ Yes' if bot_active else '⏸ No'}"
+                )
+                await send_whatsapp_message(from_number, status_message)
+                print(f"ℹ️ Status requested by admin: {status_message}")
+                return "STATUS_SENT", 200
         
             if text == "stop":
                 bot_active = False
