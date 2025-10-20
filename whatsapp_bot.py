@@ -255,8 +255,6 @@ async def receive(request: Request):
         await asyncio.sleep(delay)
 
         chat_history = chat_sessions.get(from_number, [])
-        answer, results = semantic_search(text, df, embeddings, texts)
-
         answer, results = semantic_search(text, df, embeddings, texts, top_k=global_top_k["value"], threshold=global_threshold["value"])
 
 
