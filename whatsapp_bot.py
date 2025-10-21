@@ -33,6 +33,7 @@ ADMIN_NUMBERS = ["306980102740", "923244181389"]
 
 bot_active = True
 global_threshold = {"value": 0.29}
+global_rag = {"value": "gpt-4o-mini"}
 global_top_k = {"value": 5}
 global_temperature = {"value": 0.2}
 model_name = "text-embedding-3-small"
@@ -202,7 +203,7 @@ def generate_rag_response(user_query, results, chat_history):
 
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model=global_rag["value"],
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -311,6 +312,16 @@ async def receive(request: Request):
                 await send_whatsapp_message(from_number, status_message)
                 print(f"ℹ️ Status requested by admin: {status_message}")
                 return "STATUS_SENT", 200
+
+            if text.startswith("rag="):
+                try:
+                    new_rag_model = text.split("=", 1)[1].strip()
+                    global_rag["value"] = new_rag_model  # store as string
+                    await send_whatsapp_message(from_number, f"✅ Rag model updated to {new_rag_model}")
+                    print(f"⚙️ Rag model updated to {new_rag_model} by admin.")
+                except Exception as e:
+                    await send_whatsapp_message(from_number, f"⚠️ Failed to update RAG model: {e}")
+                return "THRESHOLD_UPDATED", 200
 
             if text == "prompt":
                 prompt_message = f"📊 *Current RAG Prompt:*\n{system_prompt_text}"
