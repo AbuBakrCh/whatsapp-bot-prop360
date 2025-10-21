@@ -104,7 +104,7 @@ def build_index(df, model_name="text-embedding-3-small"):
 
 # --- Semantic Search ---
 def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=2, threshold=0.5):
-    print(f"\n🔎 Semantic search started for query: '{user_query}'")
+    print(f"\n🔎 Semantic search started for query: '{user_query}' with model: '{model_name}'")
 
     query_vec = openai.embeddings.create(
         input=[user_query],
