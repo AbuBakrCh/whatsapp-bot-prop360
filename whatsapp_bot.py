@@ -107,10 +107,15 @@ def build_index(df, model_name="text-embedding-3-small"):
 def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=2, threshold=0.5):
     print(f"\n🔎 Semantic search started for query: '{user_query}' with model: '{model_name}'")
 
-    query_vec = openai.embeddings.create(
-        input=[user_query],
-        model=model_name
-    ).data[0].embedding
+    response = openai.embeddings.create(
+        model=model_name,
+        input=[user_query]
+    )
+
+    if hasattr(response.data[0], "embedding"):
+        query_vec = response.data[0].embedding
+    else:
+        query_vec = response.data[0]
 
     query_vec = np.array(query_vec, dtype="float32")
     sim_scores = np.dot(embeddings, query_vec) / (
@@ -310,7 +315,6 @@ async def receive(request: Request):
 
         chat_history = chat_sessions.get(from_number, [])
         answer, results = semantic_search(text, df, embeddings, texts, model_name=model_name, top_k=global_top_k["value"], threshold=global_threshold["value"])
-
 
         if answer is None:
             print("🔍 No strong match found. Top results:")
