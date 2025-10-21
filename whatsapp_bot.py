@@ -79,7 +79,7 @@ def load_dataset_from_google_sheet(sheet_id):
 
 
 # --- Build Embedding Index (OpenAI) ---
-def build_index(df):
+def build_index(df, model_name="text-embedding-3-small"):
     print("📦 Encoding dataset with OpenAI embeddings...")
     start = time()
 
@@ -91,7 +91,7 @@ def build_index(df):
         batch = texts[i:i + batch_size]
         response = openai.embeddings.create(
             input=batch,
-            model="text-embedding-3-small"
+            model=model_name
         )
         batch_embeddings = [d.embedding for d in response.data]
         all_embeddings.extend(batch_embeddings)
@@ -281,10 +281,17 @@ async def receive(request: Request):
                 print("✅ Bot resumed by admin.")
                 return "BOT_RESUMED", 200
         
-            if text == "refresh":
+            if text.startswith("refresh"):
                 print("🔄 Admin requested dataset refresh...")
                 df = load_dataset_from_google_sheet(SHEET_ID)
-                embeddings, texts = build_index(df)
+
+                # Determine which model to use
+                if "2" in text:
+                    model_name = "text-embedding-3-large"
+                else:
+                    model_name = "text-embedding-3-small"
+
+                embeddings, texts = build_index(df, model_name=model_name)
                 await send_whatsapp_message(from_number, "🔁 Dataset refreshed successfully.")
                 print("✅ Dataset refreshed.")
                 return "REFRESH_OK", 200
