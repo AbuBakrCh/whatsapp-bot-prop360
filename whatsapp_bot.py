@@ -104,29 +104,63 @@ def build_index(df, model_name="text-embedding-3-small"):
 
 
 # --- Semantic Search (Weighted Multi-Result) ---
-def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=5, threshold=0.3):
+def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=5, threshold=0.5):
     print(f"\n🔎 Semantic search started for query: '{user_query}' with model: '{model_name}'")
 
-    response = openai.embeddings.create(input=[user_query], model=model_name)
-    query_vec = np.array(response.data[0].embedding, dtype="float32")
+    # --- Get query embedding ---
+    try:
+        response = openai.embeddings.create(
+            input=[user_query],
+            model=model_name
+        )
+        # Handle both large and small model responses safely
+        if hasattr(response, "data") and len(response.data) > 0:
+            query_vec = response.data[0].embedding
+        elif isinstance(response, dict) and "data" in response and len(response["data"]) > 0:
+            query_vec = response["data"][0]["embedding"]
+        else:
+            raise ValueError("Embedding response structure unexpected.")
+    except Exception as e:
+        print(f"⚠️ Error creating embedding: {e}")
+        return None, []
 
+    query_vec = np.array(query_vec, dtype="float32")
+
+    # --- Compute cosine similarities ---
     sim_scores = np.dot(embeddings, query_vec) / (
         np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec) + 1e-10
     )
 
+    # --- Select top-k results ---
     top_idx = np.argsort(sim_scores)[::-1][:top_k]
-    results = [(df.iloc[i]["questions"], df.iloc[i]["answers"], float(sim_scores[i])) for i in top_idx]
+    results = []
 
     print("📊 Top similarity results:")
-    for q, _, s in results:
+    for i in top_idx:
+        q = df.iloc[i]["questions"]
+        a = df.iloc[i]["answers"]
+        s = float(sim_scores[i])
+        results.append((q, a, s))
         print(f"  → Q: {q[:80]}... | Score={s:.4f}")
 
-    best_score = results[0][2] if results else 0.0
+    best_score = float(np.max(sim_scores)) if len(sim_scores) > 0 else 0.0
+    print(f"🏁 Best score: {best_score:.4f} | Threshold: {threshold}")
+
+    # --- Handle threshold ---
     if best_score < threshold:
         print("⚠️ No match exceeded the threshold.\n")
         return None, results
 
-    return results, results
+    # --- Combine top answers if multiple are relevant ---
+    top_answers = [a for _, a, s in results if s >= threshold]
+    if len(top_answers) == 0:
+        top_answers = [results[0][1]]  # fallback: best answer only
+
+    combined_answer = " ".join(top_answers)
+    print(f"✅ Match found above threshold. Using average of {len(top_answers)} answers.\n")
+
+    return combined_answer, results
+
 
 
 # --- RAG Response Generation (Weighted Answers) ---
