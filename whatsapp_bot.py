@@ -103,66 +103,51 @@ def build_index(df, model_name="text-embedding-3-small"):
     return embeddings, texts
 
 
-# --- Semantic Search ---
-def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=2, threshold=0.5):
+# --- Semantic Search (Weighted Multi-Result) ---
+def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=5, threshold=0.3):
     print(f"\n🔎 Semantic search started for query: '{user_query}' with model: '{model_name}'")
 
-    response = openai.embeddings.create(
-        model=model_name,
-        input=[user_query]
-    )
+    response = openai.embeddings.create(input=[user_query], model=model_name)
+    query_vec = np.array(response.data[0].embedding, dtype="float32")
 
-    if hasattr(response.data[0], "embedding"):
-        query_vec = response.data[0].embedding
-    else:
-        query_vec = response.data[0]
-
-    query_vec = np.array(query_vec, dtype="float32")
     sim_scores = np.dot(embeddings, query_vec) / (
         np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec) + 1e-10
     )
 
     top_idx = np.argsort(sim_scores)[::-1][:top_k]
-    results = []
+    results = [(df.iloc[i]["questions"], df.iloc[i]["answers"], float(sim_scores[i])) for i in top_idx]
 
     print("📊 Top similarity results:")
-    for i in top_idx:
-        q = df.iloc[i]["questions"]
-        a = df.iloc[i]["answers"]
-        s = float(sim_scores[i])
-        results.append((q, a, s))
+    for q, _, s in results:
         print(f"  → Q: {q[:80]}... | Score={s:.4f}")
 
     best_score = results[0][2] if results else 0.0
-    print(f"🏁 Best score: {best_score:.4f} | Threshold: {threshold}")
-
     if best_score < threshold:
         print("⚠️ No match exceeded the threshold.\n")
         return None, results
 
-    print(f"✅ Match found above threshold: '{results[0][0]}' (Score={best_score:.4f})\n")
-    return results[0][1], results
+    return results, results
 
 
-# --- RAG Response Generation ---
+# --- RAG Response Generation (Weighted Answers) ---
 def generate_rag_response(user_query, results, chat_history):
-    print("🔧 Threshold used inside generate_rag_response:", global_threshold["value"])
-    if results and results[0][2] > global_threshold["value"]:
-        context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
-    else:
-        polite_reply = (
-            "Bu konuda elimde net bir bilgi bulunmuyor. "
-            "Size en doğru yanıtı verebilmem için lütfen soruyu biraz daha detaylandırır mısınız?"
-        )
-        return polite_reply, "⚠️ Veri kümesinde ilgili içerik bulunamadı."
+    if not results:
+        return "Bu konuda elimde net bir bilgi bulunmuyor.", "⚠️ No results found."
+
+    # 🎯 Weight answers by similarity score
+    total_score = sum(s for _, _, s in results)
+    weighted_context_parts = []
+    for q, a, s in results:
+        weight = s / total_score if total_score > 0 else 0
+        weighted_context_parts.append(f"(Ağırlık {weight:.2f}) Soru: {q}\nCevap: {a}")
+    context = "\n\n".join(weighted_context_parts)
 
     history_str = (
         "\n".join([f"Kullanıcı: {u}\nAsistan: {a}" for u, a, _ in chat_history[-3:]])
         if chat_history else ""
     )
 
-    system_prompt = f"{system_prompt_text}\n\n [IMPORTANT NOTE] Answer in the same language as of user query: {user_query}."
-
+    system_prompt = f"{system_prompt_text}\n\n[IMPORTANT NOTE] Answer in the same language as user query."
     user_prompt = (
         f"Geçmiş konuşma:\n{history_str}\n\n"
         f"Kullanıcının yeni sorusu: {user_query}\n\n"
@@ -181,6 +166,7 @@ def generate_rag_response(user_query, results, chat_history):
         return response.choices[0].message.content.strip(), context
     except Exception as e:
         return f"⚠️ Hata: {str(e)}", context
+
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
@@ -234,7 +220,7 @@ async def receive(request: Request):
                 except ValueError:
                     await send_whatsapp_message(from_number, "⚠️ Invalid threshold format. Use like: threshold=0.35")
                 return "THRESHOLD_UPDATED", 200
-        
+
             # Top_k update
             if text.startswith("top_k="):
                 try:
@@ -269,9 +255,7 @@ async def receive(request: Request):
                 return "STATUS_SENT", 200
 
             if text == "prompt":
-                prompt_message = (
-                    f"📊 *Current RAG Prompt:*\n{system_prompt_text}"
-                )
+                prompt_message = f"📊 *Current RAG Prompt:*\n{system_prompt_text}"
                 await send_whatsapp_message(from_number, prompt_message)
                 print(f"ℹ️ prompt requested by admin: {prompt_message}")
                 return "PROMPT_SENT", 200
@@ -281,18 +265,17 @@ async def receive(request: Request):
                 await send_whatsapp_message(from_number, "⏸ Bot paused globally.")
                 print("🚫 Bot paused by admin.")
                 return "BOT_PAUSED", 200
-        
+
             if text == "start":
                 bot_active = True
                 await send_whatsapp_message(from_number, "▶️ Bot resumed globally.")
                 print("✅ Bot resumed by admin.")
                 return "BOT_RESUMED", 200
-        
+
             if text.startswith("refresh"):
                 print("🔄 Admin requested dataset refresh...")
                 df = load_dataset_from_google_sheet(SHEET_ID)
 
-                # Determine which model to use
                 if "2" in text:
                     model_name = "text-embedding-3-large"
                 else:
@@ -302,7 +285,7 @@ async def receive(request: Request):
                 await send_whatsapp_message(from_number, "🔁 Dataset refreshed successfully.")
                 print("✅ Dataset refreshed.")
                 return "REFRESH_OK", 200
-                
+
         # --- If bot is paused globally ---
         if not bot_active:
             print("🤖 Bot is paused — ignoring messages.")
@@ -314,12 +297,15 @@ async def receive(request: Request):
         await asyncio.sleep(delay)
 
         chat_history = chat_sessions.get(from_number, [])
-        answer, results = semantic_search(text, df, embeddings, texts, model_name=model_name, top_k=global_top_k["value"], threshold=global_threshold["value"])
+        results, _ = semantic_search(
+            text, df, embeddings, texts,
+            model_name=model_name,
+            top_k=global_top_k["value"],
+            threshold=global_threshold["value"]
+        )
 
-        if answer is None:
-            print("🔍 No strong match found. Top results:")
-            for q, a, s in results:
-                print(f"  → {q} (score={s:.2f})")
+        if results is None:
+            print("🔍 No strong match found.")
             rag_response = (
                 "Bu konuda elimde net bir bilgi bulunmuyor. "
                 "Ben yalnızca **Yunanistan Golden Visa** programı ile ilgili sorulara yardımcı olabiliyorum. 🇬🇷 "
