@@ -13,6 +13,7 @@ import uvicorn
 from dotenv import load_dotenv
 from urllib.parse import quote
 from langdetect import detect
+import traceback
 
 # --- Load Environment ---
 load_dotenv()
@@ -182,7 +183,10 @@ def generate_rag_response(user_query, results, chat_history):
         if chat_history else ""
     )
 
-    system_prompt = f"{system_prompt_text}\n\n[IMPORTANT NOTE] Answer in the same language as user query."
+    system_prompt = f"""{system_prompt_text}
+    Eğer birden fazla bağlam alakalı görünüyorsa, bunlardan uygun olan bilgileri birleştirerek doğal, tutarlı ve insana benzer bir cevap oluştur.
+    [IMPORTANT NOTE] Answer in the same language as user question.
+    """
     user_prompt = (
         f"Geçmiş konuşma:\n{history_str}\n\n"
         f"Kullanıcının yeni sorusu: {user_query}\n\n"
@@ -388,6 +392,7 @@ async def receive(request: Request):
 
     except Exception as e:
         print("⚠️ Error handling message:", e)
+        traceback.print_exc()
 
     return "EVENT_RECEIVED", 200
 
