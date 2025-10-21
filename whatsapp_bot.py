@@ -331,14 +331,14 @@ async def receive(request: Request):
         await asyncio.sleep(delay)
 
         chat_history = chat_sessions.get(from_number, [])
-        results, _ = semantic_search(
+        combined_answer, results = semantic_search(
             text, df, embeddings, texts,
             model_name=model_name,
             top_k=global_top_k["value"],
             threshold=global_threshold["value"]
         )
 
-        if results is None:
+        if combined_answer is None:
             print("🔍 No strong match found.")
             rag_response = (
                 "Bu konuda elimde net bir bilgi bulunmuyor. "
