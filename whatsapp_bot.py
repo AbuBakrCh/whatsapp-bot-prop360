@@ -139,7 +139,7 @@ def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
 
 
 # --- RAG Response Generation ---
-def generate_rag_response(user_query, results, chat_history, language):
+def generate_rag_response(user_query, results, chat_history):
     print("🔧 Threshold used inside generate_rag_response:", global_threshold["value"])
     if results and results[0][2] > global_threshold["value"]:
         context = "\n\n".join([f"Soru: {q}\nCevap: {a}" for q, a, _ in results])
@@ -155,7 +155,7 @@ def generate_rag_response(user_query, results, chat_history, language):
         if chat_history else ""
     )
 
-    system_prompt = f"{system_prompt_text}\n\nAnswer in the following language: {language}."
+    system_prompt = f"{system_prompt_text}\n\n [IMPORTANT NOTE] Answer in the same language as of user query: {user_query}."
 
     user_prompt = (
         f"Geçmiş konuşma:\n{history_str}\n\n"
@@ -175,13 +175,6 @@ def generate_rag_response(user_query, results, chat_history, language):
         return response.choices[0].message.content.strip(), context
     except Exception as e:
         return f"⚠️ Hata: {str(e)}", context
-
-def detect_language(text):
-    try:
-        lang = detect(text)
-        return lang  # returns ISO code like 'en', 'tr', 'el', etc.
-    except:
-        return "en"
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
@@ -221,7 +214,6 @@ async def receive(request: Request):
         msg = messages[0]
         from_number = msg["from"]
         text = msg["text"]["body"].strip().lower()
-        user_lang = detect_language(text)
 
         # --- Admin-only stop/start/refresh ---
         if from_number in ADMIN_NUMBERS:
@@ -323,7 +315,7 @@ async def receive(request: Request):
             context_used = "⚠️ Veri kümesinde ilgili içerik bulunamadı."
         else:
             rag_response, context_used = generate_rag_response(
-                text, results, chat_history, user_lang
+                text, results, chat_history
             )
 
         chat_history.append((text, rag_response, context_used))
