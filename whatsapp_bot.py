@@ -34,6 +34,7 @@ bot_active = True
 global_threshold = {"value": 0.29}
 global_top_k = {"value": 5}
 global_temperature = {"value": 0.2}
+model_name = "text-embedding-3-small"
 
 
 # --- Load Dataset from Google Sheets ---
