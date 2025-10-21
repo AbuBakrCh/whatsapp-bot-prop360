@@ -123,6 +123,7 @@ def semantic_search(user_query, df, embeddings, texts, model_name="text-embeddin
             raise ValueError("Embedding response structure unexpected.")
     except Exception as e:
         print(f"⚠️ Error creating embedding: {e}")
+        traceback.print_exc()
         return None, []
 
     query_vec = np.array(query_vec, dtype="float32")
@@ -138,11 +139,11 @@ def semantic_search(user_query, df, embeddings, texts, model_name="text-embeddin
 
     print("📊 Top similarity results:")
     for i in top_idx:
-        q = df.iloc[i]["questions"]
-        a = df.iloc[i]["answers"]
+        q = str(df.iloc[i]["questions"])
+        a = str(df.iloc[i]["answers"])
         s = float(sim_scores[i])
-        results.append((q, a, s))
         print(f"  → Q: {q[:80]}... | Score={s:.4f}")
+        results.append((q, a, s))
 
     best_score = float(np.max(sim_scores)) if len(sim_scores) > 0 else 0.0
     print(f"🏁 Best score: {best_score:.4f} | Threshold: {threshold}")
@@ -220,6 +221,7 @@ def generate_rag_response(user_query, results, chat_history):
 
     except Exception as e:
         print(f"⚠️ Error during model completion: {str(e)}")
+        traceback.print_exc()
         return f"⚠️ Hata: {str(e)}", context
 
 
