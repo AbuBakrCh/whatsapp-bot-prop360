@@ -103,12 +103,12 @@ def build_index(df, model_name="text-embedding-3-small"):
 
 
 # --- Semantic Search ---
-def semantic_search(user_query, df, embeddings, texts, top_k=2, threshold=0.5):
+def semantic_search(user_query, df, embeddings, texts, model_name="text-embedding-3-small", top_k=2, threshold=0.5):
     print(f"\n🔎 Semantic search started for query: '{user_query}'")
 
     query_vec = openai.embeddings.create(
         input=[user_query],
-        model="text-embedding-3-small"
+        model=model_name
     ).data[0].embedding
 
     query_vec = np.array(query_vec, dtype="float32")
@@ -201,6 +201,7 @@ async def verify(request: Request):
 async def receive(request: Request):
     global df, embeddings, texts
     global bot_active
+    global model_name
 
     data = await request.json()
     print("📩 Incoming message:", data)
@@ -307,7 +308,7 @@ async def receive(request: Request):
         await asyncio.sleep(delay)
 
         chat_history = chat_sessions.get(from_number, [])
-        answer, results = semantic_search(text, df, embeddings, texts, top_k=global_top_k["value"], threshold=global_threshold["value"])
+        answer, results = semantic_search(text, df, embeddings, texts, model_name=model_name, top_k=global_top_k["value"], threshold=global_threshold["value"])
 
 
         if answer is None:
