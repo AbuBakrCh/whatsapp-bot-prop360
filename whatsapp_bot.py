@@ -176,6 +176,7 @@ def generate_rag_response(user_query, results, chat_history):
         weighted_context_parts.append(f"(Ağırlık {weight:.2f}) Soru: {q}\nCevap: {a}")
     context = "\n\n".join(weighted_context_parts)
 
+    # 🕰 Include limited chat history (last 3 exchanges)
     history_str = (
         "\n".join([f"Kullanıcı: {u}\nAsistan: {a}" for u, a, _ in chat_history[-3:]])
         if chat_history else ""
@@ -188,6 +189,12 @@ def generate_rag_response(user_query, results, chat_history):
         f"Bağlam (dataset'ten alınan bilgiler):\n{context}"
     )
 
+    # 🧠 Debug printout of the exact data sent to OpenAI
+    print("\n====================== 🧠 MODEL INPUT DEBUG ======================")
+    print("🧩 SYSTEM PROMPT:\n", system_prompt)
+    print("\n💬 USER PROMPT:\n", user_prompt)
+    print("=================================================================\n")
+
     try:
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -197,9 +204,20 @@ def generate_rag_response(user_query, results, chat_history):
             ],
             temperature=global_temperature["value"],
         )
-        return response.choices[0].message.content.strip(), context
+
+        answer = response.choices[0].message.content.strip()
+
+        # 🪄 Debug printout of model response
+        print("\n====================== 🤖 MODEL RESPONSE ======================")
+        print(answer)
+        print("================================================================\n")
+
+        return answer, context
+
     except Exception as e:
+        print(f"⚠️ Error during model completion: {str(e)}")
         return f"⚠️ Hata: {str(e)}", context
+
 
 
 # --- Initial Load ---
