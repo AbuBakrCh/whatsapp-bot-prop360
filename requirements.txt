@@ -1,9 +1,13 @@
 fastapi
 uvicorn
-requests
+pymongo
+jinja2
+python-dotenv
 httpx
+openai
 pandas
 numpy
-python-dotenv
-openai
-langdetect
+requests
+python-socketio[asgi]
+motor
+streamlit
