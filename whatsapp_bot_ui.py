@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi.responses import JSONResponse
 
 # --- Load Environment ---
 load_dotenv()
@@ -50,6 +51,7 @@ MONGO_DBNAME = os.getenv("MONGO_DBNAME", "whatsapp_chat")
 mongo_client = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client[MONGO_DBNAME]
 messages_collection = db["messages"]
+configs_collection = db['configs']
 
 # ----------------------------
 # --- Socket.IO server
@@ -338,6 +340,12 @@ async def receive(request: Request):
         # Save incoming client message
         await save_message_and_emit(from_number, "incoming", raw_text)
 
+        # Check if bot is enabled for this client
+        config = await configs_collection.find_one({"clientNumber": from_number})
+        if config and not config.get("botEnabled", True):
+            print(f"🤖 Bot disabled for {from_number} — ignoring message.")
+            return "BOT_DISABLED_FOR_CLIENT", 200
+
         # --- Admin commands (from admins via WhatsApp) ---
         if from_number in ADMIN_NUMBERS:
             if text_for_search.startswith("threshold="):
@@ -456,7 +464,7 @@ async def receive(request: Request):
                 text_for_search, results, chat_history
             )
 
-        chat_history.append((raw_text, rag_response))
+        chat_history.append((raw_text, rag_response, context_used))
         chat_sessions[from_number] = chat_history
 
         # --- Send reply to WhatsApp ---
@@ -558,6 +566,34 @@ async def get_chat(client_number: str):
             "timestamp": doc["timestamp"].isoformat() if isinstance(doc["timestamp"], datetime) else str(doc["timestamp"])
         })
     return {"messages": out}
+
+
+@fastapi_app.post("/client-bot-toggle")
+async def toggle_bot(request: Request):
+    data = await request.json()
+    client_number = data.get("clientNumber")
+    bot_enabled = data.get("botEnabled", True)
+
+    if not client_number:
+        return {"error": "clientNumber is required"}
+
+    await configs_collection.update_one(
+        {"clientNumber": client_number},
+        {"$set": {"botEnabled": bot_enabled}},
+        upsert=True
+    )
+    return {"status": "ok", "botEnabled": bot_enabled}
+
+@fastapi_app.get("/get-client-config")
+async def get_client_config(clientNumber: str):
+    if not clientNumber:
+        return JSONResponse(status_code=400, content={"error": "clientNumber is required"})
+
+    config = await configs_collection.find_one({"clientNumber": clientNumber})
+    if not config:
+        return {"clientNumber": clientNumber, "botEnabled": True}  # default True
+
+    return {"clientNumber": clientNumber, "botEnabled": config.get("botEnabled", True)}
 
 
 # --- Helper to send whatsapp messages (async) ---

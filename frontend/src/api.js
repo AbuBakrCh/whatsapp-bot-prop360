@@ -13,3 +13,13 @@ export async function getChat(clientNumber) {
 export async function sendMessage(clientNumber, message, adminNumber) {
   return axios.post(`${BASE}/send`, { client_number: clientNumber, message, admin_number: adminNumber }).then(r => r.data);
 }
+
+export async function getClientConfig(clientNumber) {
+  return axios.get(`${BASE}/get-client-config`, { params: { clientNumber } })
+              .then(r => r.data);
+}
+
+export async function toggleClientBot(clientNumber, botEnabled) {
+  return axios.post(`${BASE}/client-bot-toggle`, { clientNumber, botEnabled })
+              .then(r => r.data);
+}
