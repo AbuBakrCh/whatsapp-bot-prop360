@@ -597,6 +597,10 @@ async def get_client_config(clientNumber: str):
     return {"clientNumber": clientNumber, "botEnabled": config.get("botEnabled", True)}
 
 
+@fastapi_app.api_route("/", methods=["GET", "POST", "HEAD"])
+async def root():
+    return {"message": "Hello World"}
+
 # --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):
     url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
@@ -626,7 +630,6 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     print("🔴 Socket.IO client disconnected:", sid)
-
 
 # Wrap FastAPI app with Socket.IO ASGI app
 asgi_app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
