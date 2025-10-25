@@ -1,19 +1,23 @@
+import asyncio
 import os
 import random
-import asyncio
+import traceback
+from datetime import datetime
 from time import time
+from urllib.parse import quote
 
-import pandas as pd
+import httpx
 import numpy as np
 import openai
-import requests
-import httpx
-from fastapi import FastAPI, Request
+import pandas as pd
+# Socket.IO & Motor (async Mongo)
+import socketio
 import uvicorn
 from dotenv import load_dotenv
-from urllib.parse import quote
-from langdetect import detect
-import traceback
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi.responses import JSONResponse
 
 # --- Load Environment ---
 load_dotenv()
@@ -38,6 +42,23 @@ global_top_k = {"value": 5}
 global_temperature = {"value": 0.2}
 model_name = "text-embedding-3-small"
 
+# ----------------------------
+# --- MongoDB (motor async)
+# ----------------------------
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+print(MONGO_URI)
+MONGO_DBNAME = os.getenv("MONGO_DBNAME", "whatsapp_chat")
+
+mongo_client = AsyncIOMotorClient(MONGO_URI)
+db = mongo_client[MONGO_DBNAME]
+messages_collection = db["messages"]
+configs_collection = db['configs']
+
+# ----------------------------
+# --- Socket.IO server
+# ----------------------------
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+# We'll wrap FastAPI with socketio ASGI app later
 
 # --- Load Dataset from Google Sheets ---
 def load_dataset_from_google_sheet(sheet_id):
@@ -232,12 +253,61 @@ df = load_dataset_from_google_sheet(SHEET_ID)
 embeddings, texts = build_index(df)
 chat_sessions = {}
 
+# ----------------------------
+# --- FastAPI + CORS
+# ----------------------------
+fastapi_app = FastAPI()
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # change to specific domain in prod
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --- FastAPI App ---
-app = FastAPI()
+# ----------------------------
+# --- integrate socketio with fastapi
+# ----------------------------
+# socketio ASGI app wraps the FastAPI app at the end of the file
+# use global `sio` to emit events
+
+# ----------------------------
+# --- Helpers for message storage & emit
+# ----------------------------
+async def emit_new_message(doc):
+    """Broadcast a new message to any connected dashboard clients"""
+    payload = {
+        "clientNumber": doc["clientNumber"],
+        "message": doc["message"],
+        "direction": doc["direction"],
+        "outgoingSender": doc.get("outgoingSender"),
+        "timestamp": doc["timestamp"].isoformat() if isinstance(doc["timestamp"], datetime) else str(doc["timestamp"])
+    }
+    # emit to channel 'new_message'
+    await sio.emit("new_message", payload)
+    print("🔊 Emitted new_message:", payload)
 
 
-@app.get("/webhook")
+async def save_message_and_emit(client_number, direction, message, outgoing_sender=None):
+    """Save message in MongoDB and notify dashboard via socketio"""
+    doc = {
+        "clientNumber": client_number,
+        "message": message,
+        "direction": direction,
+        "timestamp": datetime.utcnow()
+    }
+    if direction == "outgoing" and outgoing_sender:
+        doc["outgoingSender"] = outgoing_sender
+    res = await messages_collection.insert_one(doc)
+    doc["_id"] = str(res.inserted_id)
+    await emit_new_message(doc)
+    print("💾 Saved message:", doc)
+    return doc
+
+# ----------------------------
+# --- Your existing webhook endpoints (modified)
+# ----------------------------
+@fastapi_app.get("/webhook")
 async def verify(request: Request):
     params = request.query_params
     if (
@@ -248,7 +318,7 @@ async def verify(request: Request):
     return "Verification failed", 403
 
 
-@app.post("/webhook")
+@fastapi_app.post("/webhook")
 async def receive(request: Request):
     global df, embeddings, texts
     global bot_active
@@ -265,14 +335,23 @@ async def receive(request: Request):
 
         msg = messages[0]
         from_number = msg["from"]
-        text = msg["text"]["body"].strip().lower()
+        # Don't lower-case message for storage — keep original for display. Keep lowercase for semantic search if desired.
+        raw_text = msg.get("text", {}).get("body", "")
+        text_for_search = raw_text.strip().lower()
+        # Save incoming client message
+        await save_message_and_emit(from_number, "incoming", raw_text)
 
-        # --- Admin-only stop/start/refresh ---
+        # Check if bot is enabled for this client
+        config = await configs_collection.find_one({"clientNumber": from_number})
+        if config and not config.get("botEnabled", True):
+            print(f"🤖 Bot disabled for {from_number} — ignoring message.")
+            return "BOT_DISABLED_FOR_CLIENT", 200
+
+        # --- Admin commands (from admins via WhatsApp) ---
         if from_number in ADMIN_NUMBERS:
-            # Threshold update
-            if text.startswith("threshold="):
+            if text_for_search.startswith("threshold="):
                 try:
-                    new_threshold = float(text.split("=", 1)[1])
+                    new_threshold = float(text_for_search.split("=", 1)[1])
                     global_threshold["value"] = new_threshold
                     await send_whatsapp_message(from_number, f"✅ Threshold updated to {new_threshold}")
                     print(f"⚙️ Threshold updated to {new_threshold} by admin.")
@@ -281,9 +360,9 @@ async def receive(request: Request):
                 return "THRESHOLD_UPDATED", 200
 
             # Top_k update
-            if text.startswith("top_k="):
+            if text_for_search.startswith("top_k="):
                 try:
-                    new_top_k = int(text.split("=", 1)[1])
+                    new_top_k = int(text_for_search.split("=", 1)[1])
                     global_top_k["value"] = new_top_k
                     await send_whatsapp_message(from_number, f"✅ top_k updated to {new_top_k}")
                     print(f"⚙️ top_k updated to {new_top_k} by admin.")
@@ -291,9 +370,9 @@ async def receive(request: Request):
                     await send_whatsapp_message(from_number, "⚠️ Invalid top_k format. Use like: top_k=2")
                 return "TOPK_UPDATED", 200
 
-            if text.startswith("temperature="):
+            if text_for_search.startswith("temperature="):
                 try:
-                    new_temperature = float(text.split("=", 1)[1])
+                    new_temperature = float(text_for_search.split("=", 1)[1])
                     global_temperature["value"] = new_temperature
                     await send_whatsapp_message(from_number, f"✅ temperature updated to {new_temperature}")
                     print(f"⚙️ temperature updated to {new_temperature} by admin.")
@@ -301,7 +380,7 @@ async def receive(request: Request):
                     await send_whatsapp_message(from_number, "⚠️ Invalid temperature format. Use like: temperature=0.1")
                 return "TEMPERATURE_UPDATED", 200
 
-            if text == "status":
+            if text_for_search == "status":
                 status_message = (
                     f"📊 *Current Bot Configuration:*\n"
                     f"• Threshold: {global_threshold['value']}\n"
@@ -313,9 +392,9 @@ async def receive(request: Request):
                 print(f"ℹ️ Status requested by admin: {status_message}")
                 return "STATUS_SENT", 200
 
-            if text.startswith("rag="):
+            if text_for_search.startswith("rag="):
                 try:
-                    new_rag_model = text.split("=", 1)[1].strip()
+                    new_rag_model = text_for_search.split("=", 1)[1].strip()
                     global_rag["value"] = new_rag_model  # store as string
                     await send_whatsapp_message(from_number, f"✅ Rag model updated to {new_rag_model}")
                     print(f"⚙️ Rag model updated to {new_rag_model} by admin.")
@@ -323,29 +402,29 @@ async def receive(request: Request):
                     await send_whatsapp_message(from_number, f"⚠️ Failed to update RAG model: {e}")
                 return "THRESHOLD_UPDATED", 200
 
-            if text == "prompt":
+            if text_for_search == "prompt":
                 prompt_message = f"📊 *Current RAG Prompt:*\n{system_prompt_text}"
                 await send_whatsapp_message(from_number, prompt_message)
                 print(f"ℹ️ prompt requested by admin: {prompt_message}")
                 return "PROMPT_SENT", 200
 
-            if text == "stop":
+            if text_for_search == "stop":
                 bot_active = False
                 await send_whatsapp_message(from_number, "⏸ Bot paused globally.")
                 print("🚫 Bot paused by admin.")
                 return "BOT_PAUSED", 200
 
-            if text == "start":
+            if text_for_search == "start":
                 bot_active = True
                 await send_whatsapp_message(from_number, "▶️ Bot resumed globally.")
                 print("✅ Bot resumed by admin.")
                 return "BOT_RESUMED", 200
 
-            if text.startswith("refresh"):
+            if text_for_search.startswith("refresh"):
                 print("🔄 Admin requested dataset refresh...")
                 df = load_dataset_from_google_sheet(SHEET_ID)
 
-                if "2" in text:
+                if "2" in text_for_search:
                     model_name = "text-embedding-3-large"
                 else:
                     model_name = "text-embedding-3-small"
@@ -367,7 +446,7 @@ async def receive(request: Request):
 
         chat_history = chat_sessions.get(from_number, [])
         combined_answer, results = semantic_search(
-            text, df, embeddings, texts,
+            text_for_search, df, embeddings, texts,
             model_name=model_name,
             top_k=global_top_k["value"],
             threshold=global_threshold["value"]
@@ -383,10 +462,10 @@ async def receive(request: Request):
             context_used = "⚠️ Veri kümesinde ilgili içerik bulunamadı."
         else:
             rag_response, context_used = generate_rag_response(
-                text, results, chat_history
+                text_for_search, results, chat_history
             )
 
-        chat_history.append((text, rag_response, context_used))
+        chat_history.append((raw_text, rag_response, context_used))
         chat_sessions[from_number] = chat_history
 
         # --- Send reply to WhatsApp ---
@@ -400,8 +479,14 @@ async def receive(request: Request):
             "to": from_number,
             "text": {"body": rag_response},
         }
-        print("📩 Output message:", payload)
-        requests.post(url, headers=headers, json=payload)
+        print("📩 Sending to WhatsApp:", payload)
+        # Use httpx async to send
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            print("📤 WhatsApp response:", resp.status_code, resp.text)
+
+        # Save outgoing bot message and emit to dashboards
+        await save_message_and_emit(from_number, "outgoing", rag_response, outgoing_sender="bot")
 
     except Exception as e:
         print("⚠️ Error handling message:", e)
@@ -409,21 +494,110 @@ async def receive(request: Request):
 
     return "EVENT_RECEIVED", 200
 
+# create indexes (safe to call repeatedly)
+@fastapi_app.on_event("startup")
+async def ensure_indexes():
+    await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
 
-@app.api_route("/", methods=["GET", "POST", "HEAD"])
-async def root():
-    return {"message": "Hello World"}
+# --- Admin HTTP endpoint to send message from dashboard ---
+@fastapi_app.post("/send")
+async def send_from_dashboard(request: Request):
+    """
+    Body: {"client_number": "923...", "message": "text", "admin_number": "306..."}
+    admin_number optional, but validate admin in production.
+    """
+    body = await request.json()
+    client_number = body.get("client_number")
+    message = body.get("message")
+    admin_number = body.get("admin_number")
+
+    if not client_number or not message:
+        return {"error": "client_number and message required"}, 400
+
+    # Optional: validate admin_number in production
+    if admin_number and admin_number not in ADMIN_NUMBERS:
+        return {"error": "unauthorized admin"}, 403
+
+    # send via existing helper
+    await send_whatsapp_message(client_number, message)
+
+    # store as outgoing/admin (no sentBy field in your final schema)
+    await save_message_and_emit(client_number, "outgoing", message, outgoing_sender="admin")
+    return {"status": "sent"}
 
 
-@app.post("/reload")
-async def reload_data():
-    global df, embeddings, texts
-    df = load_dataset_from_google_sheet(SHEET_ID)
-    embeddings, texts = build_index(df)
-    return {"status": "✅ Dataset reloaded successfully"}
+# --- Endpoint to list unique conversations (latest message per client) ---
+@fastapi_app.get("/conversations")
+async def get_conversations():
+    pipeline = [
+        {"$sort": {"timestamp": -1}},
+        {"$group": {
+            "_id": "$clientNumber",
+            "lastMessage": {"$first": "$message"},
+            "direction": {"$first": "$direction"},
+            "outgoingSender": {"$first": "$outgoingSender"},
+            "lastTimestamp": {"$first": "$timestamp"}
+        }},
+        {"$sort": {"lastTimestamp": -1}}
+    ]
+    docs = messages_collection.aggregate(pipeline)
+    results = []
+    async for doc in docs:
+        results.append({
+            "clientNumber": doc["_id"],
+            "lastMessage": doc.get("lastMessage"),
+            "direction": doc.get("direction"),
+            "outgoingSender": doc.get("outgoingSender"),
+            "lastTimestamp": doc.get("lastTimestamp").isoformat() if doc.get("lastTimestamp") else None
+        })
+    return results
 
 
-# --- Helper for sending WhatsApp messages ---
+# --- Get chat history for a client ---
+@fastapi_app.get("/chats/{client_number}")
+async def get_chat(client_number: str):
+    cursor = messages_collection.find({"clientNumber": client_number}).sort("timestamp", 1)
+    out = []
+    async for doc in cursor:
+        out.append({
+            "clientNumber": doc["clientNumber"],
+            "message": doc["message"],
+            "direction": doc["direction"],
+            "outgoingSender": doc.get("outgoingSender"),
+            "timestamp": doc["timestamp"].isoformat() if isinstance(doc["timestamp"], datetime) else str(doc["timestamp"])
+        })
+    return {"messages": out}
+
+
+@fastapi_app.post("/client-bot-toggle")
+async def toggle_bot(request: Request):
+    data = await request.json()
+    client_number = data.get("clientNumber")
+    bot_enabled = data.get("botEnabled", True)
+
+    if not client_number:
+        return {"error": "clientNumber is required"}
+
+    await configs_collection.update_one(
+        {"clientNumber": client_number},
+        {"$set": {"botEnabled": bot_enabled}},
+        upsert=True
+    )
+    return {"status": "ok", "botEnabled": bot_enabled}
+
+@fastapi_app.get("/get-client-config")
+async def get_client_config(clientNumber: str):
+    if not clientNumber:
+        return JSONResponse(status_code=400, content={"error": "clientNumber is required"})
+
+    config = await configs_collection.find_one({"clientNumber": clientNumber})
+    if not config:
+        return {"clientNumber": clientNumber, "botEnabled": True}  # default True
+
+    return {"clientNumber": clientNumber, "botEnabled": config.get("botEnabled", True)}
+
+
+# --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):
     url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
     headers = {
@@ -436,11 +610,28 @@ async def send_whatsapp_message(to, message):
         "text": {"body": message},
     }
 
-    print("📤 Sending message:", payload)
+    print("📤 Sending message to WhatsApp:", payload)
     async with httpx.AsyncClient() as client:
-        await client.post(url, headers=headers, json=payload)
+        resp = await client.post(url, headers=headers, json=payload)
+        print("📤 send_whatsapp_message response:", resp.status_code, resp.text)
+        return resp
 
+
+# --- Socket.IO event handlers (optional) ---
+@sio.event
+async def connect(sid, environ):
+    print("🟢 Socket.IO client connected:", sid)
+    await sio.emit("info", {"msg": "connected"}, to=sid)
+
+@sio.event
+async def disconnect(sid):
+    print("🔴 Socket.IO client disconnected:", sid)
+
+
+# Wrap FastAPI app with Socket.IO ASGI app
+asgi_app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
+app = asgi_app
 
 if __name__ == "__main__":
-    print("🚀 WhatsApp bot running at /webhook")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("🚀 Starting server (ASGI app with Socket.IO and FastAPI)")
+    uvicorn.run(asgi_app, host="0.0.0.0", port=8000)
