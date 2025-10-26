@@ -37,7 +37,7 @@ ADMIN_NUMBERS = ["306980102740", "923244181389"]
 
 bot_active = True
 global_threshold = {"value": 0.29}
-global_rag = {"value": "gpt-4o-mini"}
+global_rag = {"value": "gpt-4o"}
 global_top_k = {"value": 5}
 global_temperature = {"value": 0.2}
 model_name = "text-embedding-3-small"
