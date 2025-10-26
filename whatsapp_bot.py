@@ -208,16 +208,24 @@ def generate_rag_response(user_query, results, chat_history):
 
     system_prompt = f"""{system_prompt_text}
     Eğer birden fazla bağlam alakalı görünüyorsa, bunlardan uygun olan bilgileri birleştirerek doğal, tutarlı ve insana benzer bir cevap oluştur.
-
-    ⚠️ ÖNEMLİ KURAL:
-    Kullanıcının sorusu hangi dildeyse, yanıtın da TAMAMEN o dilde olmalıdır. 
-    Asla başka bir dil kullanma. (Örneğin, kullanıcı Türkçe sorduysa sen de tamamen Türkçe yanıt ver.)
     """
-    user_prompt = (
-        f"Geçmiş konuşma:\n{history_str}\n\n"
-        f"Kullanıcının yeni sorusu: {user_query}\n\n"
-        f"Bağlam (dataset'ten alınan bilgiler):\n{context}"
-    )
+
+    user_prompt = f"""
+    🧠 GEÇMİŞ KONUŞMA:
+    {history_str}
+
+    💬 KULLANICININ YENİ SORUSU:
+    {user_query}
+
+    📚 BAĞLAM (dataset'ten alınan bilgiler):
+    {context}
+
+    ⚠️ TALİMAT:
+    Kullanıcının yeni sorusu hangi dildeyse, yanıtın da TAMAMEN o dilde olmalıdır.
+    Asla başka bir dil kullanma. Eğer kullanıcı İngilizce sorduysa sadece İngilizce cevap ver;
+    Türkçe sorduysa sadece Türkçe cevap ver.
+    """
+
 
     # 🧠 Debug printout of the exact data sent to OpenAI
     print("\n====================== 🧠 MODEL INPUT DEBUG ======================")
