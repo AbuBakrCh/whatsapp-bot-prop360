@@ -267,6 +267,49 @@ def generate_rag_response(user_query, combined_answer, chat_history):
         return f"⚠️ Hata: {str(e)}", combined_answer
 
 
+def generate_text_with_model(input_text, model_name=None, temperature=0.5):
+    """
+    Sends a plain text prompt to the configured OpenAI model and returns the output text.
+
+    Args:
+        input_text (str): The text prompt or question to send to the model.
+        model_name (str): Optional. Model to use (default: global_rag["value"] if defined).
+        temperature (float): Optional. Sampling temperature for creativity (0.0–1.0).
+
+    Returns:
+        str: Model-generated response text, or an error message.
+    """
+
+    # Choose default model if not passed
+    try:
+        model_to_use = model_name or global_rag["value"]
+    except NameError:
+        model_to_use = "gpt-4o-mini"  # safe fallback
+
+    print("\n====================== 🧠 MODEL INPUT DEBUG ======================")
+    print(input_text)
+    print("=================================================================\n")
+
+    try:
+        response = openai.chat.completions.create(
+            model=model_to_use,
+            messages=[{"role": "user", "content": input_text}],
+            temperature=temperature,
+        )
+
+        output_text = response.choices[0].message.content.strip()
+
+        print("\n====================== 🤖 MODEL OUTPUT ======================")
+        print(output_text)
+        print("================================================================\n")
+
+        return output_text
+
+    except Exception as e:
+        print(f"⚠️ Error during model call: {str(e)}")
+        traceback.print_exc()
+        return f"⚠️ Error: {str(e)}"
+
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
@@ -493,7 +536,24 @@ async def receive(request: Request):
                 text_for_search, combined_answer, chat_history
             )
 
-        chat_history.append((raw_text, rag_response, context_used))
+        translated_text = generate_text_with_model(f"""
+        You are a strict translator. Always translate the text inside <start> and <end> tags into the SAME LANGUAGE as the text after <start-input> and <end-input>.
+
+        <start>
+        {rag_response}
+        <end>
+
+        <start-input>
+        {raw_text}
+        <end-input>
+
+        Important:
+        - DO NOT return any <start> or <end> tags.
+        - If the two texts are already in the same language, simply rephrase naturally.
+        - If they are in different languages, translate accurately into the language of the input text.
+        """)
+
+        chat_history.append((raw_text, translated_text, context_used))
         chat_sessions[from_number] = chat_history
 
         # --- Send reply to WhatsApp ---
@@ -505,7 +565,7 @@ async def receive(request: Request):
         payload = {
             "messaging_product": "whatsapp",
             "to": from_number,
-            "text": {"body": rag_response},
+            "text": {"body": translated_text},
         }
         print("📩 Sending to WhatsApp:", payload)
         # Use httpx async to send
@@ -514,7 +574,7 @@ async def receive(request: Request):
             print("📤 WhatsApp response:", resp.status_code, resp.text)
 
         # Save outgoing bot message and emit to dashboards
-        await save_message_and_emit(from_number, "outgoing", rag_response, outgoing_sender="bot", context=context_used)
+        await save_message_and_emit(from_number, "outgoing", translated_text, outgoing_sender="bot", context=context_used)
 
     except Exception as e:
         print("⚠️ Error handling message:", e)
