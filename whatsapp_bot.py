@@ -176,29 +176,33 @@ def semantic_search(user_query, df, embeddings, texts, model_name="text-embeddin
         return None, results
 
     # --- Combine top answers if multiple are relevant ---
-    top_answers = [a for _, a, s in results if s >= threshold]
-    if len(top_answers) == 0:
-        top_answers = [results[0][1]]  # fallback: best answer only
+    top_results = [(a, s) for _, a, s in results if s >= threshold]
 
-    combined_answer = " ".join(top_answers)
-    print(f"✅ Match found above threshold. Using average of {len(top_answers)} answers.\n")
+    # --- If no answer passes threshold, return None ---
+    if not top_results:
+        print("⚠️ No relevant match above threshold — returning None.\n")
+        return None, results
 
+    # --- Weight the answers by similarity ---
+    scores = np.array([s for _, s in top_results])
+    weights = scores / np.sum(scores)  # normalize to sum = 1
+
+    # Combine weighted answers
+    weighted_parts = []
+    for (answer, score), weight in zip(top_results, weights):
+        weighted_parts.append(f"[Weight {weight:.2f}] {answer.strip()}")
+
+    combined_answer = "\n".join(weighted_parts)
+
+    print(f"✅ Weighted combination of {len(top_results)} answers (sum of weights = 1.0)\n")
     return combined_answer, results
 
 
 
-# --- RAG Response Generation (Weighted Answers) ---
-def generate_rag_response(user_query, results, chat_history):
-    if not results:
-        return "Bu konuda elimde net bir bilgi bulunmuyor.", "⚠️ No results found."
-
-    # 🎯 Weight answers by similarity score
-    total_score = sum(s for _, _, s in results)
-    weighted_context_parts = []
-    for q, a, s in results:
-        weight = s / total_score if total_score > 0 else 0
-        weighted_context_parts.append(f"(Ağırlık {weight:.2f}) Soru: {q}\nCevap: {a}")
-    context = "\n\n".join(weighted_context_parts)
+# --- RAG Response Generation (Uses Pre-Weighted Combined Answer) ---
+def generate_rag_response(user_query, combined_answer, chat_history):
+    if not combined_answer:
+        return "Bu konuda elimde net bir bilgi bulunmuyor.", "⚠️ No context found."
 
     # 🕰 Include limited chat history (last 3 exchanges)
     history_str = (
@@ -207,7 +211,8 @@ def generate_rag_response(user_query, results, chat_history):
     )
 
     system_prompt = f"""{system_prompt_text}
-    Eğer birden fazla bağlam alakalı görünüyorsa, bunlardan uygun olan bilgileri birleştirerek doğal, tutarlı ve insana benzer bir cevap oluştur.
+    Eğer birden fazla bağlam alakalı görünüyorsa, bunlardan uygun olan bilgileri birleştirerek 
+    doğal, tutarlı ve insana benzer bir cevap oluştur.
     """
 
     user_prompt = f"""
@@ -217,15 +222,19 @@ def generate_rag_response(user_query, results, chat_history):
     💬 KULLANICININ YENİ SORUSU:
     {user_query}
 
-    📚 BAĞLAM (dataset'ten alınan bilgiler):
-    {context}
+    📚 BAĞLAM (ağırlıklı kombinasyon):
+    Aşağıda, benzerlik skorlarına göre en alakalı bağlamlar listelenmiştir.
+    Her bağlamın yanındaki "(Ağırlık X.XX)" ifadesi, o bilginin ne kadar önemli olduğunu gösterir.
+    Yüksek ağırlık = Kullanıcının sorusuyla daha fazla alakalı bilgi.
+
+    {combined_answer}
 
     ⚠️ TALİMAT:
     Kullanıcının yeni sorusu hangi dildeyse, yanıtın da TAMAMEN o dilde olmalıdır.
     Asla başka bir dil kullanma. Eğer kullanıcı İngilizce sorduysa sadece İngilizce cevap ver;
     Türkçe sorduysa sadece Türkçe cevap ver.
+    Ayrıca, cevabını oluştururken yüksek ağırlıklı bağlamlara daha fazla önem ver.
     """
-
 
     # 🧠 Debug printout of the exact data sent to OpenAI
     print("\n====================== 🧠 MODEL INPUT DEBUG ======================")
@@ -250,12 +259,12 @@ def generate_rag_response(user_query, results, chat_history):
         print(answer)
         print("================================================================\n")
 
-        return answer, context
+        return answer, combined_answer
 
     except Exception as e:
         print(f"⚠️ Error during model completion: {str(e)}")
         traceback.print_exc()
-        return f"⚠️ Hata: {str(e)}", context
+        return f"⚠️ Hata: {str(e)}", combined_answer
 
 
 
@@ -294,12 +303,16 @@ async def emit_new_message(doc):
         "outgoingSender": doc.get("outgoingSender"),
         "timestamp": doc["timestamp"].isoformat() if isinstance(doc["timestamp"], datetime) else str(doc["timestamp"])
     }
+
+    if "context" in doc:
+        payload["context"] = doc["context"]
+
     # emit to channel 'new_message'
     await sio.emit("new_message", payload)
     print("🔊 Emitted new_message:", payload)
 
 
-async def save_message_and_emit(client_number, direction, message, outgoing_sender=None):
+async def save_message_and_emit(client_number, direction, message, outgoing_sender=None, context=None):
     """Save message in MongoDB and notify dashboard via socketio"""
     doc = {
         "clientNumber": client_number,
@@ -309,6 +322,10 @@ async def save_message_and_emit(client_number, direction, message, outgoing_send
     }
     if direction == "outgoing" and outgoing_sender:
         doc["outgoingSender"] = outgoing_sender
+
+    if context is not None:
+        doc["context"] = context
+
     res = await messages_collection.insert_one(doc)
     doc["_id"] = str(res.inserted_id)
     await emit_new_message(doc)
@@ -473,7 +490,7 @@ async def receive(request: Request):
             context_used = "⚠️ Veri kümesinde ilgili içerik bulunamadı."
         else:
             rag_response, context_used = generate_rag_response(
-                text_for_search, results, chat_history
+                text_for_search, combined_answer, chat_history
             )
 
         chat_history.append((raw_text, rag_response, context_used))
@@ -497,7 +514,7 @@ async def receive(request: Request):
             print("📤 WhatsApp response:", resp.status_code, resp.text)
 
         # Save outgoing bot message and emit to dashboards
-        await save_message_and_emit(from_number, "outgoing", rag_response, outgoing_sender="bot")
+        await save_message_and_emit(from_number, "outgoing", rag_response, outgoing_sender="bot", context=context_used)
 
     except Exception as e:
         print("⚠️ Error handling message:", e)
@@ -559,7 +576,8 @@ async def get_conversations():
             "lastMessage": doc.get("lastMessage"),
             "direction": doc.get("direction"),
             "outgoingSender": doc.get("outgoingSender"),
-            "lastTimestamp": doc.get("lastTimestamp").isoformat() if doc.get("lastTimestamp") else None
+            "lastTimestamp": doc.get("lastTimestamp").isoformat() if doc.get("lastTimestamp") else None,
+            "context": doc.get("context")
         })
     return results
 
@@ -575,7 +593,8 @@ async def get_chat(client_number: str):
             "message": doc["message"],
             "direction": doc["direction"],
             "outgoingSender": doc.get("outgoingSender"),
-            "timestamp": doc["timestamp"].isoformat() if isinstance(doc["timestamp"], datetime) else str(doc["timestamp"])
+            "timestamp": doc["timestamp"].isoformat() if isinstance(doc["timestamp"], datetime) else str(doc["timestamp"]),
+            "context": doc.get("context")
         })
     return {"messages": out}
 

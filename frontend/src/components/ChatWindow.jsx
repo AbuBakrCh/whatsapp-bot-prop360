@@ -106,6 +106,13 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
               )}
               <div className={`max-w-[70%] p-3 rounded-xl ${bubbleClass}`}>
                 <div className="text-base break-words">{m.message}</div>
+                {/* Show context if available (for bot messages) */}
+                {m.outgoingSender === 'bot' && m.context && (
+                  <details className="mt-2 text-xs bg-green-700/10 p-2 rounded-md border border-green-500/30 whitespace-pre-wrap">
+                    <summary className="cursor-pointer text-green-700 font-medium">🧩 Show context</summary>
+                    <div className="mt-1 text-green-900">{m.context}</div>
+                  </details>
+                )}
                 <div
                   className={`text-xs mt-1 text-right ${
                     isIncoming
