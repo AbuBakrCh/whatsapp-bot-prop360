@@ -208,7 +208,10 @@ def generate_rag_response(user_query, results, chat_history):
 
     system_prompt = f"""{system_prompt_text}
     Eğer birden fazla bağlam alakalı görünüyorsa, bunlardan uygun olan bilgileri birleştirerek doğal, tutarlı ve insana benzer bir cevap oluştur.
-    [IMPORTANT NOTE] Answer in the same language as user question.
+
+    ⚠️ ÖNEMLİ KURAL:
+    Kullanıcının sorusu hangi dildeyse, yanıtın da TAMAMEN o dilde olmalıdır. 
+    Asla başka bir dil kullanma. (Örneğin, kullanıcı Türkçe sorduysa sen de tamamen Türkçe yanıt ver.)
     """
     user_prompt = (
         f"Geçmiş konuşma:\n{history_str}\n\n"
