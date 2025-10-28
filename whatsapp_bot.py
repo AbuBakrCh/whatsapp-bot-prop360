@@ -551,7 +551,11 @@ async def receive(request: Request):
         print("Detected Language:", detected_language)
 
         translated_text = generate_text_with_model(f"""
-        Translate following text into {detected_language}:
+        You are a translation assistant.
+        If the following text is already written in {detected_language}, return it unchanged.
+        Otherwise, translate it into {detected_language}.
+
+        Text:
         {rag_response}
         """)
 
