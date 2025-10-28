@@ -41,6 +41,7 @@ global_rag = {"value": "gpt-4o"}
 global_top_k = {"value": 5}
 global_temperature = {"value": 0.2}
 model_name = "text-embedding-3-small"
+processed_message_ids = set()
 
 # ----------------------------
 # --- MongoDB (motor async)
@@ -406,6 +407,15 @@ async def receive(request: Request):
 
         msg = messages[0]
         from_number = msg["from"]
+
+        message_id = msg["id"]
+
+        # --- Prevent duplicate replies ---
+        if message_id in processed_message_ids:
+            print(f"⚠️ Duplicate message detected: {message_id} — skipping")
+            return "EVENT_RECEIVED", 200
+        processed_message_ids.add(message_id)
+
         # Don't lower-case message for storage — keep original for display. Keep lowercase for semantic search if desired.
         raw_text = msg.get("text", {}).get("body", "")
         text_for_search = raw_text.strip().lower()
