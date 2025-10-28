@@ -202,42 +202,39 @@ def semantic_search(user_query, df, embeddings, texts, model_name="text-embeddin
 
 # --- RAG Response Generation (Uses Pre-Weighted Combined Answer) ---
 def generate_rag_response(user_query, combined_answer, chat_history):
-    if not combined_answer:
-        return "Bu konuda elimde net bir bilgi bulunmuyor.", "⚠️ No context found."
-
     # 🕰 Include limited chat history (last 3 exchanges)
     history_str = (
-        "\n".join([f"Kullanıcı: {u}\nAsistan: {a}" for u, a, _ in chat_history[-3:]])
+        "\n".join([f"User: {u}\nAssistant: {a}" for u, a, _ in chat_history[-3:]])
         if chat_history else ""
     )
 
+    # ✅ Always provide a context, even if no match found
+    if not combined_answer:
+        combined_answer = (
+            "⚠️ No relevant context found in the dataset for this user query. "
+            "However, respond naturally but based only on the conversation history."
+        )
+
     system_prompt = f"""{system_prompt_text}
-    Eğer birden fazla bağlam alakalı görünüyorsa, bunlardan uygun olan bilgileri birleştirerek 
-    doğal, tutarlı ve insana benzer bir cevap oluştur.
+    If multiple contexts seem relevant, combine them appropriately to produce a natural, coherent, human-like answer.
+    Each context includes a weight value (e.g., 'Weight 0.87') — treat higher-weighted contexts as more important and prioritize them when forming the response.
     """
 
     user_prompt = f"""
-    🧠 GEÇMİŞ KONUŞMA:
+    🧠 CONVERSATION HISTORY:
     {history_str}
 
-    💬 KULLANICININ YENİ SORUSU:
+    💬 USER'S NEW QUESTION:
     {user_query}
 
-    📚 BAĞLAM (ağırlıklı kombinasyon):
-    Aşağıda, benzerlik skorlarına göre en alakalı bağlamlar listelenmiştir.
-    Her bağlamın yanındaki "(Ağırlık X.XX)" ifadesi, o bilginin ne kadar önemli olduğunu gösterir.
-    Yüksek ağırlık = Kullanıcının sorusuyla daha fazla alakalı bilgi.
-
+    📚 CONTEXT (weighted combination or note if none found):
     {combined_answer}
 
-    ⚠️ TALİMAT:
-    Kullanıcının yeni sorusu hangi dildeyse, yanıtın da TAMAMEN o dilde olmalıdır.
-    Asla başka bir dil kullanma. Eğer kullanıcı İngilizce sorduysa sadece İngilizce cevap ver;
-    Türkçe sorduysa sadece Türkçe cevap ver.
-    Ayrıca, cevabını oluştururken yüksek ağırlıklı bağlamlara daha fazla önem ver.
+    ⚠️ INSTRUCTIONS:
+    - The answer must be entirely in the same language as the user's message.
+    - If no relevant context exists, still reply meaningfully but based solely on prior conversations.
     """
 
-    # 🧠 Debug printout of the exact data sent to OpenAI
     print("\n====================== 🧠 MODEL INPUT DEBUG ======================")
     print("🧩 SYSTEM PROMPT:\n", system_prompt)
     print("\n💬 USER PROMPT:\n", user_prompt)
@@ -265,7 +262,8 @@ def generate_rag_response(user_query, combined_answer, chat_history):
     except Exception as e:
         print(f"⚠️ Error during model completion: {str(e)}")
         traceback.print_exc()
-        return f"⚠️ Hata: {str(e)}", combined_answer
+        return f"⚠️ Error: {str(e)}", combined_answer
+
 
 
 def generate_text_with_model(input_text, model_name=None, temperature=0.5):
@@ -546,21 +544,15 @@ async def receive(request: Request):
                 text_for_search, combined_answer, chat_history
             )
 
+        detected_language = generate_text_with_model(f"""
+        What language is this text in (only return the language name): {raw_text}
+        """)
+
+        print("Detected Language:", detected_language)
+
         translated_text = generate_text_with_model(f"""
-        You are a strict translator. Always translate the text inside <start> and <end> tags into the SAME LANGUAGE as the text after <start-input> and <end-input>.
-
-        <start>
+        Translate following text into {detected_language}:
         {rag_response}
-        <end>
-
-        <start-input>
-        {raw_text}
-        <end-input>
-
-        Important:
-        - DO NOT return any <start> or <end> tags.
-        - If the two texts are already in the same language, simply rephrase naturally.
-        - If they are in different languages, translate accurately into the language of the input text.
         """)
 
         chat_history.append((raw_text, translated_text, context_used))
