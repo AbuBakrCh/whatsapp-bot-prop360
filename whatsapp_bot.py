@@ -552,8 +552,9 @@ async def receive(request: Request):
 
         translated_text = generate_text_with_model(f"""
         You are a translation assistant.
-        If the following text is already written in {detected_language}, return it unchanged.
+        If the following text is already written in {detected_language}, return it exactly as is.
         Otherwise, translate it into {detected_language}.
+        Return only the translated text — no explanations, no prefixes.
 
         Text:
         {rag_response}
