@@ -531,18 +531,9 @@ async def receive(request: Request):
             threshold=global_threshold["value"]
         )
 
-        if combined_answer is None:
-            print("🔍 No strong match found.")
-            rag_response = (
-                "Bu konuda elimde net bir bilgi bulunmuyor. "
-                "Ben yalnızca **Yunanistan Golden Visa** programı ile ilgili sorulara yardımcı olabiliyorum. 🇬🇷 "
-                "Lütfen sorunuz bu konuyla ilgiliyse tekrar yazın. 😊"
-            )
-            context_used = "⚠️ Veri kümesinde ilgili içerik bulunamadı."
-        else:
-            rag_response, context_used = generate_rag_response(
-                text_for_search, combined_answer, chat_history
-            )
+        rag_response, context_used = generate_rag_response(
+            text_for_search, combined_answer, chat_history
+        )
 
         detected_language = generate_text_with_model(f"""
         What language is this text in (only return the language name): {raw_text}
