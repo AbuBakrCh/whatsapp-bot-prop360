@@ -14,10 +14,11 @@ import pandas as pd
 import socketio
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi.responses import JSONResponse
+from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorClient
 
 # --- Load Environment ---
 load_dotenv()
@@ -683,6 +684,41 @@ async def get_client_config(clientNumber: str):
         return {"clientNumber": clientNumber, "botEnabled": True}  # default True
 
     return {"clientNumber": clientNumber, "botEnabled": config.get("botEnabled", True)}
+
+# --- 🟢 GET /details endpoint ---
+@fastapi_app.get("/details")
+async def get_details(client: str):
+    """Fetch name and info for a given client number"""
+    doc = await messages_collection.find_one({"clientNumber": client})
+    if not doc:
+        # If not found, return empty fields for frontend to fill
+        return {"name": "", "info": ""}
+    return {
+        "name": doc.get("name", ""),
+        "info": doc.get("info", "")
+    }
+
+# --- 🟢 PUT /details endpoint ---
+@fastapi_app.put("/details")
+async def update_details(request: Request):
+    """Update or create client details"""
+    body = await request.json()
+    client_number = body.get("client")
+    name = body.get("name", "")
+    info = body.get("info", "")
+
+    if not client_number:
+        raise HTTPException(status_code=400, detail="Client number is required")
+
+    # Upsert document (update if exists, insert if not)
+    await messages_collection.update_one(
+        {"clientNumber": client_number},
+        {"$set": {"name": name, "info": info, "updatedAt": datetime.utcnow()}},
+        upsert=True
+    )
+
+    print(f"✅ Updated details for {client_number}: name={name}, info={info}")
+    return {"status": "success", "message": "Details updated"}
 
 
 @fastapi_app.api_route("/", methods=["GET", "POST", "HEAD"])

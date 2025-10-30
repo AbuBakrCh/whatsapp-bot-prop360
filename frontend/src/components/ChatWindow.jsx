@@ -6,6 +6,52 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
   const bottomRef = useRef(null)
   const [text, setText] = useState('')
   const [botEnabledForClient, setBotEnabledForClient] = useState(true)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [contactName, setContactName] = useState('')
+  const [contactInfo, setContactInfo] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [loadingDetails, setLoadingDetails] = useState(false)
+
+  // Fetch existing details when modal opens
+  useEffect(() => {
+    const fetchDetails = async () => {
+      if (!selected || !showDetailsModal) return
+      setLoadingDetails(true)
+      try {
+        const res = await fetch(`/details?client=${encodeURIComponent(selected)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setContactName(data.name || '')
+          setContactInfo(data.info || '')
+        } else {
+          console.error('Failed to fetch details:', res.statusText)
+        }
+      } catch (err) {
+        console.error('Error fetching details:', err)
+      } finally {
+        setLoadingDetails(false)
+        setIsEditing(false)
+      }
+    }
+    fetchDetails()
+  }, [showDetailsModal, selected])
+
+  const handleSaveDetails = async () => {
+    try {
+      await fetch('/details', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: selected,
+          name: contactName,
+          info: contactInfo,
+        }),
+      })
+      setShowDetailsModal(false)
+    } catch (err) {
+      console.error('Failed to update details:', err)
+    }
+  }
 
   // Scroll to bottom whenever messages or selection changes
   useEffect(() => {
@@ -20,9 +66,9 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
     const fetchConfig = async () => {
       try {
         const data = await getClientConfig(selected)
-        setBotEnabledForClient(data.botEnabled !== false) // default true
+        setBotEnabledForClient(data.botEnabled !== false)
       } catch (err) {
-        console.error("Failed to fetch client config:", err)
+        console.error('Failed to fetch client config:', err)
         setBotEnabledForClient(true)
       }
     }
@@ -41,7 +87,7 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
     try {
       await toggleClientBot(selected, enabled)
     } catch (err) {
-      console.error("Failed to update bot toggle:", err)
+      console.error('Failed to update bot toggle:', err)
     }
   }
 
@@ -67,6 +113,14 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
         <div className="text-lg font-semibold text-gray-800 truncate">
           {selected}
         </div>
+
+        {/* 🟢 Details Button */}
+        <button
+          onClick={() => setShowDetailsModal(true)}
+          className="ml-auto px-3 py-1.5 text-sm font-medium bg-green-500 hover:bg-green-600 text-white rounded-md shadow-sm transition"
+        >
+          Details
+        </button>
       </div>
 
       {/* Bot Toggle */}
@@ -98,7 +152,6 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
               key={i}
               className={`flex flex-col ${isIncoming ? 'items-start' : 'items-end'}`}
             >
-              {/* Label for outgoing messages */}
               {!isIncoming && m.outgoingSender && (
                 <div className="mb-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 select-none">
                   {m.outgoingSender === 'bot' ? 'Bot' : 'Admin'}
@@ -106,7 +159,6 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
               )}
               <div className={`max-w-[70%] p-3 rounded-xl ${bubbleClass}`}>
                 <div className="text-base break-words">{m.message}</div>
-                {/* Show context if available (for bot messages) */}
                 {m.outgoingSender === 'bot' && m.context && (
                   <details className="mt-2 text-xs bg-green-700/10 p-2 rounded-md border border-green-500/30 whitespace-pre-wrap">
                     <summary className="cursor-pointer text-green-700 font-medium">🧩 Show context</summary>
@@ -144,12 +196,14 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
             placeholder="Type a message..."
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSend()
+            }}
           />
           <button
             className={`bg-gradient-to-br from-green-500 to-green-600 text-white p-3 rounded-full flex items-center justify-center
                         transform transition-all duration-300 ease-in-out
-                        ${(!text.trim())
+                        ${!text.trim()
                           ? 'opacity-60 saturate-50 cursor-not-allowed'
                           : 'hover:brightness-110 hover:scale-105 hover:shadow-lg hover:shadow-green-500/40'}`}
             onClick={handleSend}
@@ -159,6 +213,78 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
           </button>
         </div>
       </div>
+
+      {/* 🪟 Details Modal */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+            <h2 className="text-lg font-semibold mb-4 text-gray-800">Contact Details</h2>
+
+            {loadingDetails ? (
+              <div className="text-gray-500 text-sm">Loading details...</div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    readOnly={!isEditing}
+                    className={`w-full p-2 border rounded-md ${
+                      isEditing
+                        ? 'focus:ring-2 focus:ring-green-500 focus:outline-none'
+                        : 'bg-gray-100 cursor-not-allowed text-gray-600'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    Other Information
+                  </label>
+                  <textarea
+                    value={contactInfo}
+                    onChange={(e) => setContactInfo(e.target.value)}
+                    readOnly={!isEditing}
+                    className={`w-full p-2 border rounded-md resize-none ${
+                      isEditing
+                        ? 'focus:ring-2 focus:ring-green-500 focus:outline-none'
+                        : 'bg-gray-100 cursor-not-allowed text-gray-600'
+                    }`}
+                    rows={4}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-between items-center">
+              <button
+                onClick={() => setIsEditing((prev) => !prev)}
+                className="px-3 py-1.5 text-sm font-medium text-green-600 hover:text-green-800"
+              >
+                {isEditing ? 'Cancel Edit' : 'Edit'}
+              </button>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDetailsModal(false)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Close
+                </button>
+                {isEditing && (
+                  <button
+                    onClick={handleSaveDetails}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md"
+                  >
+                    OK
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
