@@ -25,7 +25,7 @@ export default function ChatList({ conversations = [], onSelect, selected }) {
             }
           >
             <div className="flex justify-between items-center">
-              <div className="font-medium text-sm truncate">{c.clientNumber}</div>
+                <div className="font-medium text-sm truncate">{c.clientName || c.clientNumber}</div>
               <div className="text-xs text-gray-400">
                 {c.lastTimestamp
                   ? new Date(c.lastTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

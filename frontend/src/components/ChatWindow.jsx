@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { Send, MessagesSquare } from 'lucide-react'
-import { getClientConfig, toggleClientBot } from '../api'
+import { getClientConfig, toggleClientBot, getDetails, updateDetails } from '../api';
 
-export default function ChatWindow({ selected, messages = [], onSend }) {
+export default function ChatWindow({ selected, messages = [], onSend, onDetailsUpdated }) {
   const bottomRef = useRef(null)
   const [text, setText] = useState('')
   const [botEnabledForClient, setBotEnabledForClient] = useState(true)
@@ -15,43 +15,34 @@ export default function ChatWindow({ selected, messages = [], onSend }) {
   // Fetch existing details when modal opens
   useEffect(() => {
     const fetchDetails = async () => {
-      if (!selected || !showDetailsModal) return
-      setLoadingDetails(true)
-      try {
-        const res = await fetch(`/details?client=${encodeURIComponent(selected)}`)
-        if (res.ok) {
-          const data = await res.json()
-          setContactName(data.name || '')
-          setContactInfo(data.info || '')
-        } else {
-          console.error('Failed to fetch details:', res.statusText)
+        if (!selected || !showDetailsModal) return;
+        setLoadingDetails(true);
+        try {
+          const data = await getDetails(selected);
+          setContactName(data.name || '');
+          setContactInfo(data.info || '');
+        } catch (err) {
+          console.error('Error fetching details:', err);
+        } finally {
+          setLoadingDetails(false);
+          setIsEditing(false);
         }
-      } catch (err) {
-        console.error('Error fetching details:', err)
-      } finally {
-        setLoadingDetails(false)
-        setIsEditing(false)
-      }
-    }
-    fetchDetails()
-  }, [showDetailsModal, selected])
+      };
+    fetchDetails();
+    }, [showDetailsModal, selected]);
 
   const handleSaveDetails = async () => {
-    try {
-      await fetch('/details', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client: selected,
-          name: contactName,
-          info: contactInfo,
-        }),
-      })
-      setShowDetailsModal(false)
-    } catch (err) {
-      console.error('Failed to update details:', err)
-    }
-  }
+      try {
+        await updateDetails(selected, contactName, contactInfo);
+        setShowDetailsModal(false);
+        if (onDetailsUpdated) {
+            onDetailsUpdated();
+        }
+      } catch (err) {
+        console.error('Failed to update details:', err);
+      }
+    };
+
 
   // Scroll to bottom whenever messages or selection changes
   useEffect(() => {

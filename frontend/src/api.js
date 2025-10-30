@@ -23,3 +23,15 @@ export async function toggleClientBot(clientNumber, botEnabled) {
   return axios.post(`${BASE}/client-bot-toggle`, { clientNumber, botEnabled })
               .then(r => r.data);
 }
+
+export async function getDetails(client) {
+  return axios
+    .get(`${BASE}/details`, { params: { client } })
+    .then((r) => r.data);
+}
+
+export async function updateDetails(client, name, info) {
+  return axios
+    .put(`${BASE}/details`, { client, name, info })
+    .then((r) => r.data);
+}

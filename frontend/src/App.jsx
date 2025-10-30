@@ -44,7 +44,8 @@ export default function App() {
         clientNumber: d.clientNumber,
         lastMessage: d.lastMessage,
         outgoingSender: d.outgoingSender,
-        lastTimestamp: d.lastTimestamp
+        lastTimestamp: d.lastTimestamp,
+        clientName: d.clientName
       })))
     } catch (e) {
       console.error(e)
@@ -89,6 +90,7 @@ export default function App() {
           selected={selected}
           messages={messages}
           onSend={handleSend}
+          onDetailsUpdated={loadConversations}
         />
       </div>
     </div>

@@ -630,8 +630,15 @@ async def get_conversations():
     docs = messages_collection.aggregate(pipeline)
     results = []
     async for doc in docs:
+        client_number = doc["_id"]
+
+        # Fetch name from configs_collection (if it exists)
+        client_doc = await configs_collection.find_one({"clientNumber": client_number})
+        client_name = client_doc.get("name") if client_doc else ""
+
         results.append({
-            "clientNumber": doc["_id"],
+            "clientNumber": client_number,
+            "clientName": client_name,
             "lastMessage": doc.get("lastMessage"),
             "direction": doc.get("direction"),
             "outgoingSender": doc.get("outgoingSender"),
@@ -689,7 +696,7 @@ async def get_client_config(clientNumber: str):
 @fastapi_app.get("/details")
 async def get_details(client: str):
     """Fetch name and info for a given client number"""
-    doc = await messages_collection.find_one({"clientNumber": client})
+    doc = await configs_collection.find_one({"clientNumber": client})
     if not doc:
         # If not found, return empty fields for frontend to fill
         return {"name": "", "info": ""}
@@ -711,7 +718,7 @@ async def update_details(request: Request):
         raise HTTPException(status_code=400, detail="Client number is required")
 
     # Upsert document (update if exists, insert if not)
-    await messages_collection.update_one(
+    await configs_collection.update_one(
         {"clientNumber": client_number},
         {"$set": {"name": name, "info": info, "updatedAt": datetime.utcnow()}},
         upsert=True
