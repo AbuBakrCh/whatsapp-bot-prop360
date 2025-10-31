@@ -81,15 +81,18 @@ export default function App() {
 
   return (
     <div className="h-screen flex">
-      <div className="w-1/3 bg-green-50 border-r border-green-200 flex flex-col">
-        {/* Fixed header */}
-        <div className="p-4 border-b bg-white sticky top-0 z-20">
-          <h1 className="text-lg font-semibold text-green-600">Kostas' Dashboard</h1>
-          <span className="text-xs text-gray-400">v{__APP_VERSION__}</span>
-        </div>
-        {/* Scrollable chat list */}
+      <div className="w-1/3 bg-green-50 border-r border-green-200 flex flex-col h-screen">
+      {/* Fixed header */}
+      <div className="p-4 border-b bg-white sticky top-0 z-20 flex justify-between items-center">
+        <h1 className="text-lg font-semibold text-green-600">Kostas' Dashboard</h1>
+        <span className="text-xs text-gray-400">v{__APP_VERSION__}</span>
+      </div>
+
+      {/* Scrollable chat list */}
+      <div className="flex-1 overflow-y-auto p-3 scrollbar-hide">
         <ChatList conversations={conversations} onSelect={openChat} selected={selected} />
       </div>
+    </div>
 
       <div className="flex-1 bg-white">
         <ChatWindow
