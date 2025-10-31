@@ -20,8 +20,8 @@ export default function App() {
     socketRef.current.on('new_message', (msg) => {
         if (msg.outgoingSender === 'admin') return  // ignore own messages
         setConversations(prev => {
-          const others = prev.filter(c => c.clientNumber !== msg.clientNumber)
           const existing = prev.find(c => c.clientNumber === msg.clientNumber)
+          const others = prev.filter(c => c.clientNumber !== msg.clientNumber)
 
           const newItem = {
             clientNumber: msg.clientNumber,
@@ -29,10 +29,12 @@ export default function App() {
             direction: msg.direction,
             outgoingSender: msg.outgoingSender,
             lastTimestamp: msg.timestamp,
-            clientName: existing?.clientName || ''
+            clientName: existing?.clientName || (selected === msg.clientNumber ? selectedChat?.clientName : '') || msg.clientNumber
           }
+
           return [newItem, ...others]
         })
+
         if (selected === msg.clientNumber) {
           setMessages(prev => [...prev, msg])
         }
@@ -83,6 +85,7 @@ export default function App() {
         {/* Fixed header */}
         <div className="p-4 border-b bg-white sticky top-0 z-20">
           <h1 className="text-lg font-semibold text-green-600">Kostas' Dashboard</h1>
+          <span className="text-xs text-gray-400">v{__APP_VERSION__}</span>
         </div>
         {/* Scrollable chat list */}
         <ChatList conversations={conversations} onSelect={openChat} selected={selected} />
