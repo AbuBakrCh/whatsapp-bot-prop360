@@ -21,12 +21,15 @@ export default function App() {
         if (msg.outgoingSender === 'admin') return  // ignore own messages
         setConversations(prev => {
           const others = prev.filter(c => c.clientNumber !== msg.clientNumber)
+          const existing = prev.find(c => c.clientNumber === msg.clientNumber)
+
           const newItem = {
             clientNumber: msg.clientNumber,
             lastMessage: msg.message,
             direction: msg.direction,
             outgoingSender: msg.outgoingSender,
-            lastTimestamp: msg.timestamp
+            lastTimestamp: msg.timestamp,
+            clientName: existing?.clientName || ''
           }
           return [newItem, ...others]
         })
