@@ -88,6 +88,7 @@ export default function App() {
       <div className="flex-1 bg-white">
         <ChatWindow
           selected={selected}
+          selectedChat={conversations.find(c => c.clientNumber === selected)}
           messages={messages}
           onSend={handleSend}
           onDetailsUpdated={loadConversations}

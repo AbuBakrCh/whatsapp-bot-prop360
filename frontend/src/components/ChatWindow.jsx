@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import { Send, MessagesSquare } from 'lucide-react'
 import { getClientConfig, toggleClientBot, getDetails, updateDetails } from '../api';
 
-export default function ChatWindow({ selected, messages = [], onSend, onDetailsUpdated }) {
+export default function ChatWindow({ selected, selectedChat, messages = [], onSend, onDetailsUpdated }) {
   const bottomRef = useRef(null)
   const [text, setText] = useState('')
   const [botEnabledForClient, setBotEnabledForClient] = useState(true)
@@ -102,7 +102,7 @@ export default function ChatWindow({ selected, messages = [], onSend, onDetailsU
           {selected.slice(0, 2).toUpperCase()}
         </div>
         <div className="text-lg font-semibold text-gray-800 truncate">
-          {selected}
+            {selectedChat?.clientName || selected}
         </div>
 
         {/* 🟢 Details Button */}
@@ -166,11 +166,17 @@ export default function ChatWindow({ selected, messages = [], onSend, onDetailsU
                   }`}
                 >
                   {m.timestamp
-                    ? new Date(m.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
+                      ? new Date(
+                          m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z'
+                        ).toLocaleString([], {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
                     : ''}
+
                 </div>
               </div>
             </div>
