@@ -14,77 +14,77 @@ export default function App() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const socketRef = useRef(null)
 
+  // Fetch conversations once on mount
   useEffect(() => {
-    loadConversations()
+    async function fetchConversations() {
+      setLoadingConversations(true)
+      try {
+        const data = await getConversations()
+        setConversations(data)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setLoadingConversations(false)
+      }
+    }
+    fetchConversations()
 
-    // connect socket
+    // Connect socket
     socketRef.current = io(SOCKET_URL, { transports: ['websocket'] })
     socketRef.current.on('connect', () => console.log('socket connected'))
+
     socketRef.current.on('new_message', (msg) => {
-        if (msg.outgoingSender === 'admin') return  // ignore own messages
+      if (msg.outgoingSender === 'admin') return
 
-        setConversations(prev => {
-          const existing = prev.find(c => c.clientNumber === msg.clientNumber)
-          const others = prev.filter(c => c.clientNumber !== msg.clientNumber)
-
-          const newItem = {
-            clientNumber: msg.clientNumber,
-            lastMessage: msg.message,
-            direction: msg.direction,
-            outgoingSender: msg.outgoingSender,
-            lastTimestamp: msg.timestamp,
-            clientName: existing?.clientName || msg.clientNumber
-          }
-
-          return [newItem, ...others]
-        })
-
-        if (selected === msg.clientNumber) {
-          setMessages(prev => [...prev, msg])
+      setConversations(prev => {
+        const existing = prev.find(c => c.clientNumber === msg.clientNumber)
+        const others = prev.filter(c => c.clientNumber !== msg.clientNumber)
+        const newItem = {
+          clientNumber: msg.clientNumber,
+          lastMessage: msg.message,
+          direction: msg.direction,
+          outgoingSender: msg.outgoingSender,
+          lastTimestamp: msg.timestamp,
+          clientName: existing?.clientName || msg.clientNumber
         }
+        return [newItem, ...others]
+      })
+
+      if (selected === msg.clientNumber) {
+        setMessages(prev => [...prev, msg])
+      }
     })
 
     return () => socketRef.current && socketRef.current.disconnect()
-  }, [selected])
+  }, [])
 
-  async function loadConversations(){
-    setLoadingConversations(true)
-    try {
-      const data = await getConversations()
-      setConversations(data.map(d => ({
-        clientNumber: d.clientNumber,
-        lastMessage: d.lastMessage,
-        outgoingSender: d.outgoingSender,
-        lastTimestamp: d.lastTimestamp,
-        clientName: d.clientName
-      })))
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoadingConversations(false)
-    }
-  }
-
-  async function openChat(clientNumber){
+  // Open chat and fetch messages
+  async function openChat(clientNumber) {
     setSelected(clientNumber)
     setLoadingMessages(true)
     try {
       const res = await getChat(clientNumber)
       setMessages(res.messages || [])
-    } catch(e) {
+    } catch (e) {
       console.error(e)
     } finally {
       setLoadingMessages(false)
     }
   }
 
-  async function handleSend(text){
-    if(!selected || !text) return
+  async function handleSend(text) {
+    if (!selected || !text) return
     try {
       await sendMessage(selected, text)
-      const msg = { clientNumber: selected, message: text, direction: 'outgoing', outgoingSender: 'admin', timestamp: new Date().toISOString() }
+      const msg = {
+        clientNumber: selected,
+        message: text,
+        direction: 'outgoing',
+        outgoingSender: 'admin',
+        timestamp: new Date().toISOString()
+      }
       setMessages(prev => [...prev, msg])
-    } catch(e) {
+    } catch (e) {
       console.error(e)
       alert('Failed to send message')
     }
@@ -130,27 +130,37 @@ export default function App() {
         </div>
 
         {/* Scrollable chat list */}
-        <div className="flex-1 overflow-y-auto p-3 scrollbar-hide">
-          {loadingConversations ? (
+        <div className="flex-1 overflow-y-auto p-3 scrollbar-thin">
+          {loadingConversations && conversations.length === 0 ? (
             <Loader text="Loading chats..." />
           ) : (
-            <ChatList conversations={conversations} onSelect={openChat} selected={selected} />
+            <ChatList
+              conversations={conversations}
+              onSelect={openChat}
+              selected={selected}
+            />
           )}
         </div>
       </div>
 
       {/* Chat Window */}
       <div className="flex-1 bg-white">
-        {loadingMessages ? (
-          <Loader text="Loading messages..." />
+        {selected ? (
+          loadingMessages ? (
+            <Loader text="Loading messages..." />
+          ) : (
+            <ChatWindow
+              selected={selected}
+              selectedChat={conversations.find(c => c.clientNumber === selected)}
+              messages={messages}
+              onSend={handleSend}
+              onDetailsUpdated={() => {}}
+            />
+          )
         ) : (
-          <ChatWindow
-            selected={selected}
-            selectedChat={conversations.find(c => c.clientNumber === selected)}
-            messages={messages}
-            onSend={handleSend}
-            onDetailsUpdated={loadConversations}
-          />
+          <div className="h-full flex flex-col items-center justify-center bg-slate-100 p-4">
+            <span className="text-gray-400 text-lg">No conversation selected</span>
+          </div>
         )}
       </div>
     </div>

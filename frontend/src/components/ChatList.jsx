@@ -2,14 +2,14 @@ import React from 'react'
 
 export default function ChatList({ conversations = [], onSelect, selected }) {
   return (
-    <div className="h-full flex flex-col bg-green-50 border-r border-green-200">
+    <div className="h-full flex flex-col">
       {/* Header */}
       <div className="p-4 text-lg font-semibold text-gray-800 border-b border-green-200">
         Chats
       </div>
 
       {/* Scrollable conversations */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
         {conversations.length === 0 && (
           <div className="text-gray-400 text-center mt-10">No chats yet</div>
         )}
@@ -25,7 +25,7 @@ export default function ChatList({ conversations = [], onSelect, selected }) {
             }
           >
             <div className="flex justify-between items-center">
-                <div className="font-medium text-sm truncate">{c.clientName || c.clientNumber}</div>
+              <div className="font-medium text-sm truncate">{c.clientName || c.clientNumber}</div>
               <div className="text-xs text-gray-400">
                 {c.lastTimestamp
                   ? new Date(
