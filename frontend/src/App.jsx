@@ -10,6 +10,7 @@ export default function App() {
   const [conversations, setConversations] = useState([])
   const [selected, setSelected] = useState(null)
   const [messages, setMessages] = useState([])
+  const [loadingMessages, setLoadingMessages] = useState(false) // ← NEW
   const socketRef = useRef(null)
 
   useEffect(() => {
@@ -59,11 +60,14 @@ export default function App() {
 
   async function openChat(clientNumber){
     setSelected(clientNumber)
+    setLoadingMessages(true) // ← start loader
     try {
       const res = await getChat(clientNumber)
       setMessages(res.messages || [])
     } catch(e) {
       console.error(e)
+    } finally {
+      setLoadingMessages(false) // ← stop loader
     }
   }
 
@@ -99,6 +103,7 @@ export default function App() {
           selected={selected}
           selectedChat={conversations.find(c => c.clientNumber === selected)}
           messages={messages}
+          loadingMessages={loadingMessages} // ← pass loader prop
           onSend={handleSend}
           onDetailsUpdated={loadConversations}
         />

@@ -12,6 +12,9 @@ export default function ChatWindow({ selected, selectedChat, messages = [], onSe
   const [isEditing, setIsEditing] = useState(false)
   const [loadingDetails, setLoadingDetails] = useState(false)
 
+  // ← NEW: loader state for messages
+  const [loadingMessages, setLoadingMessages] = useState(false)
+
   // Fetch existing details when modal opens
   useEffect(() => {
     const fetchDetails = async () => {
@@ -127,61 +130,68 @@ export default function ChatWindow({ selected, selectedChat, messages = [], onSe
 
       {/* Scrollable Messages */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-        {messages.map((m, i) => {
-          const isIncoming = m.direction === 'incoming'
-          let bubbleClass = ''
-          if (isIncoming) {
-            bubbleClass = 'bg-white text-gray-800 rounded-bl-sm shadow-md'
-          } else if (m.outgoingSender === 'bot') {
-            bubbleClass = 'bg-gradient-to-br from-green-500 to-green-600 text-white rounded-br-sm shadow-md'
-          } else {
-            bubbleClass = 'bg-blue-500 text-white rounded-br-sm shadow-md'
-          }
+        {/* ← NEW: show loader if messages are loading */}
+        {loadingMessages ? (
+          <div className="flex items-center justify-center h-full text-gray-500">
+            Loading messages...
+          </div>
+        ) : (
+          messages.map((m, i) => {
+            const isIncoming = m.direction === 'incoming'
+            let bubbleClass = ''
+            if (isIncoming) {
+              bubbleClass = 'bg-white text-gray-800 rounded-bl-sm shadow-md'
+            } else if (m.outgoingSender === 'bot') {
+              bubbleClass = 'bg-gradient-to-br from-green-500 to-green-600 text-white rounded-br-sm shadow-md'
+            } else {
+              bubbleClass = 'bg-blue-500 text-white rounded-br-sm shadow-md'
+            }
 
-          return (
-            <div
-              key={i}
-              className={`flex flex-col ${isIncoming ? 'items-start' : 'items-end'}`}
-            >
-              {!isIncoming && m.outgoingSender && (
-                <div className="mb-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 select-none">
-                  {m.outgoingSender === 'bot' ? 'Bot' : 'Admin'}
-                </div>
-              )}
-              <div className={`max-w-[70%] p-3 rounded-xl ${bubbleClass}`}>
-                <div className="text-base break-words">{m.message}</div>
-                {m.outgoingSender === 'bot' && m.context && (
-                  <details className="mt-2 text-xs bg-green-700/10 p-2 rounded-md border border-green-500/30 whitespace-pre-wrap">
-                    <summary className="cursor-pointer text-green-700 font-medium">🧩 Show context</summary>
-                    <div className="mt-1 text-green-900">{m.context}</div>
-                  </details>
+            return (
+              <div
+                key={i}
+                className={`flex flex-col ${isIncoming ? 'items-start' : 'items-end'}`}
+              >
+                {!isIncoming && m.outgoingSender && (
+                  <div className="mb-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 select-none">
+                    {m.outgoingSender === 'bot' ? 'Bot' : 'Admin'}
+                  </div>
                 )}
-                <div
-                  className={`text-xs mt-1 text-right ${
-                    isIncoming
-                      ? 'text-slate-400'
-                      : m.outgoingSender === 'bot'
-                        ? 'text-green-100 opacity-80'
-                        : 'text-blue-100 opacity-80'
-                  }`}
-                >
-                  {m.timestamp
-                      ? new Date(
-                          m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z'
-                        ).toLocaleString([], {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                    : ''}
+                <div className={`max-w-[70%] p-3 rounded-xl ${bubbleClass}`}>
+                  <div className="text-base break-words">{m.message}</div>
+                  {m.outgoingSender === 'bot' && m.context && (
+                    <details className="mt-2 text-xs bg-green-700/10 p-2 rounded-md border border-green-500/30 whitespace-pre-wrap">
+                      <summary className="cursor-pointer text-green-700 font-medium">🧩 Show context</summary>
+                      <div className="mt-1 text-green-900">{m.context}</div>
+                    </details>
+                  )}
+                  <div
+                    className={`text-xs mt-1 text-right ${
+                      isIncoming
+                        ? 'text-slate-400'
+                        : m.outgoingSender === 'bot'
+                          ? 'text-green-100 opacity-80'
+                          : 'text-blue-100 opacity-80'
+                    }`}
+                  >
+                    {m.timestamp
+                        ? new Date(
+                            m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z'
+                          ).toLocaleString([], {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                      : ''}
 
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })
+        )}
         <div ref={bottomRef} />
       </div>
 
