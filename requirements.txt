@@ -11,3 +11,5 @@ requests
 python-socketio[asgi]
 motor
 streamlit
+python-multipart
+openpyxl

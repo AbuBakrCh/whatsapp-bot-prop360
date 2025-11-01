@@ -1,8 +1,11 @@
 import asyncio
+import mimetypes
 import os
 import random
+import smtplib
 import traceback
 from datetime import datetime
+from email.message import EmailMessage
 from time import time
 from urllib.parse import quote
 
@@ -15,10 +18,12 @@ import socketio
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
+from fastapi import Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
+
+fastapi_app = FastAPI()
 
 # --- Load Environment ---
 load_dotenv()
@@ -47,7 +52,7 @@ processed_message_ids = set()
 # ----------------------------
 # --- MongoDB (motor async)
 # ----------------------------
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 print(MONGO_URI)
 MONGO_DBNAME = os.getenv("MONGO_DBNAME", "whatsapp_chat")
 
@@ -731,6 +736,132 @@ async def update_details(request: Request):
 @fastapi_app.api_route("/", methods=["GET", "POST", "HEAD"])
 async def root():
     return {"message": "Hello World"}
+
+@fastapi_app.post("/send-bulk-email")
+async def send_bulk_email_drive(drive_link: str = Form(...), sheet_name: str = Form("Sheet1")):
+    """
+    Send bulk emails from a public Google Sheet.
+    - Required columns: subject | content | recipients
+    - Optional: attachments | cc | bcc
+    - attachments: comma-separated public Drive links
+      * Empty attachments are skipped
+      * Failed downloads of non-empty attachments count as a failure
+    """
+    try:
+        # Convert Google Sheets link to CSV
+        if "docs.google.com/spreadsheets" in drive_link:
+            try:
+                file_id = drive_link.split("/d/")[1].split("/")[0]
+                safe_sheet_name = quote(sheet_name)
+                drive_link = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={safe_sheet_name}"
+                print(f"✅ Converted Google Sheet link: {drive_link}")
+            except IndexError:
+                raise HTTPException(status_code=400, detail="Invalid Google Sheets link")
+
+        # Download CSV
+        df = pd.read_csv(drive_link)
+        print(f"✅ Loaded {len(df)} rows from Google Sheet")
+
+        # Validate required columns
+        required_columns = {"subject", "content", "recipients"}
+        missing = required_columns - set(df.columns)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Missing required columns: {missing}")
+
+        EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
+        EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
+        if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+            raise HTTPException(status_code=400, detail="Missing EMAIL_ADDRESS or EMAIL_APP_PASSWORD env vars")
+
+        sent_count = 0
+        failed = []
+
+        async with httpx.AsyncClient() as client:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+                smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+
+                for _, row in df.iterrows():
+                    try:
+                        msg = EmailMessage()
+                        msg["Subject"] = str(row["subject"])
+                        msg["From"] = EMAIL_ADDRESS
+
+                        # Recipients
+                        recipients = [r.strip() for r in str(row["recipients"]).split(",") if r.strip()]
+                        msg["To"] = ", ".join(recipients)
+
+                        # Optional CC/BCC
+                        cc_list = [r.strip() for r in str(row.get("cc", "")).split(",") if r.strip()]
+                        bcc_list = [r.strip() for r in str(row.get("bcc", "")).split(",") if r.strip()]
+                        if cc_list:
+                            msg["Cc"] = ", ".join(cc_list)
+
+                        # Content
+                        content = str(row["content"])
+                        if "<" in content and ">" in content:
+                            msg.add_alternative(content, subtype="html")
+                        else:
+                            msg.set_content(content)
+
+                        # Attachments (Drive links)
+                        # Attachments (Drive links)
+                        attachments_col = row.get("attachments")
+                        if pd.notna(attachments_col) and str(attachments_col).strip() != "":
+                            for att_link in str(attachments_col).split(","):
+                                att_link = att_link.strip()
+                                if not att_link:
+                                    continue
+                                try:
+                                    # --- Convert Google Drive share link to direct download link ---
+                                    if "drive.google.com" in att_link:
+                                        if "/file/d/" in att_link:
+                                            file_id = att_link.split("/d/")[1].split("/")[0]
+                                            att_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+                                        elif "id=" in att_link:
+                                            file_id = att_link.split("id=")[1].split("&")[0]
+                                            att_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+                                        # else leave as-is; may be invalid, will error out
+
+                                    att_resp = await client.get(att_link, headers={"User-Agent": "Mozilla/5.0"},
+                                                                follow_redirects=True)
+                                    if att_resp.status_code != 200:
+                                        raise Exception(f"Attachment download failed (status {att_resp.status_code})")
+
+                                    # Extract filename from Content-Disposition
+                                    cd = att_resp.headers.get("Content-Disposition")
+                                    if cd and "filename=" in cd:
+                                        filename = cd.split("filename=")[1].strip(' "')
+                                    else:
+                                        # fallback if header not present
+                                        filename = att_link.split("/")[-1]
+
+                                    ctype, encoding = mimetypes.guess_type(filename)
+                                    if ctype is None or encoding is not None:
+                                        ctype = "application/octet-stream"
+                                    maintype, subtype = ctype.split("/", 1)
+
+                                    msg.add_attachment(att_resp.content, maintype=maintype, subtype=subtype,
+                                                       filename=filename)
+
+                                except Exception as e:
+                                    # Non-empty attachment failed → count as failure
+                                    raise Exception(f"Attachment error for {att_link}: {e}")
+
+                        smtp.send_message(msg, to_addrs=recipients + cc_list + bcc_list)
+                        sent_count += 1
+                        print(f"✅ Sent email to {recipients}")
+
+                    except Exception as e:
+                        print(f"❌ Failed to send email to {row.get('recipients')}: {e}")
+                        failed.append({"recipients": row.get("recipients"), "error": str(e)})
+
+        return {"status": "done", "sent": sent_count, "failed": failed}
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 # --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):

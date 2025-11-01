@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { getConversations, getChat, sendMessage } from './api'
 import ChatList from './components/ChatList'
 import ChatWindow from './components/ChatWindow'
+import { Link } from "react-router-dom"
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://127.0.0.1:8000'
 
@@ -140,10 +141,19 @@ export default function App() {
       {/* Chat List */}
       <div className="w-1/3 bg-green-50 border-r border-green-200 flex flex-col h-screen">
         {/* Fixed header */}
-        <div className="p-4 border-b bg-white sticky top-0 z-20 flex justify-between items-center">
+          <div className="h-[70px] px-4 bg-white border-b sticky top-0 z-20 flex justify-between items-center">
           <h1 className="text-lg font-semibold text-green-600">Kostas' Dashboard</h1>
-          <span className="text-xs text-gray-400">v{__APP_VERSION__}</span>
-        </div>
+
+          <div className="flex items-center gap-3">
+            <Link
+              to="/utilities"
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition"
+            >
+              Utilities
+            </Link>
+            <span className="text-xs text-gray-400">v{__APP_VERSION__}</span>
+            </div>
+          </div>
 
         {/* Scrollable chat list */}
         <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-green-400 scrollbar-track-green-50">

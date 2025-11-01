@@ -106,7 +106,7 @@ export default function ChatWindow({ selected, selectedChat, messages = [], load
   return (
     <div className="flex flex-col h-full bg-slate-100">
       {/* Chat Header */}
-      <div className="p-4 bg-white sticky top-0 z-10 border-b border-slate-200 flex items-center gap-4 shadow-sm">
+      <div className="h-[70px] px-4 bg-white sticky top-0 z-10 border-b border-slate-200 flex items-center gap-4 shadow-sm">
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-medium text-xl flex-shrink-0 ring-4 ring-white">
           {selected.slice(0, 2).toUpperCase()}
         </div>

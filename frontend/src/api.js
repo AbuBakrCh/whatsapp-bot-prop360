@@ -35,3 +35,15 @@ export async function updateDetails(client, name, info) {
     .put(`${BASE}/details`, { client, name, info })
     .then((r) => r.data);
 }
+
+export async function sendBulkEmailFile(driveLink) {
+  const formData = new FormData();
+  formData.append("drive_link", driveLink);
+
+  const response = await axios.post(`${BASE}/send-bulk-email`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  return response.data;
+}
+

@@ -4,9 +4,9 @@ export default function ChatList({ conversations = [], onSelect, selected }) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="p-4 text-lg font-semibold text-gray-800 border-b border-green-200">
-        Chats
-      </div>
+        <div className="h-[70px] px-4 flex items-center justify-center backdrop-blur-sm bg-white/70 border-b border-green-100 shadow-sm">
+          <h1 className="text-xl font-bold text-gray-800 drop-shadow-sm">Chats</h1>
+        </div>
 
       {/* Scrollable conversations */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
