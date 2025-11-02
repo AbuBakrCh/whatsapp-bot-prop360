@@ -110,9 +110,13 @@ export default function ChatWindow({ selected, selectedChat, messages = [], load
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-medium text-xl flex-shrink-0 ring-4 ring-white">
           {selected.slice(0, 2).toUpperCase()}
         </div>
-        <div className="text-lg font-semibold text-gray-800 truncate">
-          {selectedChat?.clientName || selected}
+        <div className="flex flex-col">
+          <span className="text-lg font-semibold text-gray-800 truncate">
+            {selectedChat?.clientName || selected}
+          </span>
+          <span className="text-sm text-gray-500 truncate">{selected}</span>
         </div>
+
 
         {/* 🟢 Details Button */}
         <button
