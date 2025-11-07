@@ -47,3 +47,10 @@ export async function sendBulkEmailFile(driveLink) {
   return response.data;
 }
 
+export async function processBankStatementsFromDrive(folderLink) {
+  const res = await axios.post(`${BASE}/bank-statements/from-drive-folder`, {
+    folder_link: folderLink,
+  });
+  return res.data;
+}
+

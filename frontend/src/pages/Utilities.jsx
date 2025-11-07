@@ -1,6 +1,7 @@
-import React from "react"
-import { Link } from "react-router-dom"
-import SendBulkEmail from "./SendBulkEmail"
+import React from "react";
+import { Link } from "react-router-dom";
+import SendBulkEmail from "./SendBulkEmail"; // use your correct component name
+import ProcessBankStatementsDrive from "./ProcessBankStatementsDrive";
 
 export default function Utilities() {
   return (
@@ -17,9 +18,10 @@ export default function Utilities() {
       </div>
 
       {/* Content Section */}
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-6 space-y-8">
         <SendBulkEmail />
+        <ProcessBankStatementsDrive />
       </div>
     </div>
-  )
+  );
 }

@@ -1,4 +1,6 @@
 import asyncio
+import imghdr
+import csv
 import mimetypes
 import os
 import random
@@ -8,7 +10,9 @@ from datetime import datetime
 from email.message import EmailMessage
 from time import time
 from urllib.parse import quote
+import re
 
+import google.generativeai as genai
 import httpx
 import numpy as np
 import openai
@@ -17,7 +21,7 @@ import pandas as pd
 import socketio
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi import Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -27,6 +31,8 @@ fastapi_app = FastAPI()
 
 # --- Load Environment ---
 load_dotenv()
+
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -49,10 +55,17 @@ global_temperature = {"value": 0.2}
 model_name = "text-embedding-3-small"
 processed_message_ids = set()
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=GEMINI_API_KEY)
+gen_model = genai.GenerativeModel("gemini-2.5-flash")
+
+PROP360_URL = "https://prop360.pro/api/merchant/form_data"
+PROP_AUTH_TOKEN = os.getenv("PROP360_BEARER_TOKEN")
+
 # ----------------------------
 # --- MongoDB (motor async)
 # ----------------------------
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 print(MONGO_URI)
 MONGO_DBNAME = os.getenv("MONGO_DBNAME", "whatsapp_chat")
 
@@ -862,6 +875,112 @@ async def send_bulk_email_drive(drive_link: str = Form(...), sheet_name: str = F
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def extract_csv_from_image(image_bytes: bytes) -> str:
+    img_type = imghdr.what(None, image_bytes)  # jpeg, png, etc.
+
+    # Normalize
+    if img_type == "jpg":  # imghdr sometimes returns jpg
+        img_type = "jpeg"
+
+    mime = f"image/{img_type}"
+
+    encoded = {
+        "mime_type": mime,
+        "data": image_bytes
+    }
+
+    prompt = """
+            Extract all transaction rows from this bank statement.
+            Return ONLY CSV with headers:
+            bank_name, value_date, transaction_date, debit_credit_flag, amount, description
+            Dates must be YYYY-MM-DD. Do not add extra text.
+            """
+    response = gen_model.generate_content([prompt, encoded])
+    return response.text.strip()
+
+def submit_to_prop360(row: dict):
+    payload = {
+        "formId": "68c2eb885d8b5ec633d3be86",
+        "indicator": "custom-a462rgbzo",
+        "owner": "XkPoOtdoSxSe5CbRfK4zZBmaZnR2",
+        "isPublic": False,
+        "destructive": False,
+        "data": {
+            "field-1757605194423-ofbqnqfso": row.get("bank_name", ""),
+            "field-1757605079803-icw8ykc19": row.get("value_date", ""),
+            "field-1757605069078-p5plna7qr": row.get("transaction_date", ""),
+            "field-1757605718340-ue95ozr9u": row.get("debit_credit_flag", ""),
+            "field-1757605508754-uea4iadqd": row.get("amount", ""),
+            "field-1758478917909-jqxoz2s3h": row.get("description"),
+            "attachedForms": []
+        }
+    }
+
+    r = httpx.post(
+        PROP360_URL,
+        json=payload,
+        headers={"Authorization": f"Bearer {PROP_AUTH_TOKEN}"}
+    )
+    return r.status_code, r.text
+
+def extract_folder_id(url: str):
+    match = re.search(r"/folders/([a-zA-Z0-9_-]+)", url)
+    if not match:
+        raise ValueError("Invalid public folder link")
+    return match.group(1)
+
+async def list_files_in_folder(folder_id: str):
+    url = (
+        "https://www.googleapis.com/drive/v3/files"
+        f"?q='{folder_id}'+in+parents"
+        "&fields=files(id,name,mimeType)"
+        f"&key={GOOGLE_API_KEY}"
+    )
+    async with httpx.AsyncClient() as client:
+        res = await client.get(url)
+        return res.json().get("files", [])
+
+@fastapi_app.post("/bank-statements/from-drive-folder")
+async def process_from_drive_folder(folder_link: str = Body(..., embed=True)):
+    folder_id = extract_folder_id(folder_link)
+
+    files = await list_files_in_folder(folder_id)
+
+    if not files:
+        return {"processed": []}
+
+    all_results = []
+
+    async with httpx.AsyncClient() as client:
+        for f in files:
+            allowed_mimes = [
+                "image/jpeg",
+                "image/png",
+                "image/jpg"
+            ]
+
+            if f["mimeType"] not in allowed_mimes:
+                continue
+
+            download_url = f"https://drive.google.com/uc?export=download&id={f['id']}"
+            response = await client.get(download_url, follow_redirects=True)
+            image_bytes = response.content
+
+            csv_text = extract_csv_from_image(image_bytes)
+
+            rows = csv.DictReader(csv_text.splitlines())
+            next(rows, None)
+
+            for row in rows:
+                status, response = submit_to_prop360(row)
+                all_results.append({
+                    "file": f["name"],
+                    "row": row,
+                    "status": status,
+                    "response": response
+                })
+
+    return {"processed": all_results}
 
 # --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):
