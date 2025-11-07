@@ -47,10 +47,22 @@ export async function sendBulkEmailFile(driveLink) {
   return response.data;
 }
 
-export async function processBankStatementsFromDrive(folderLink) {
-  const res = await axios.post(`${BASE}/bank-statements/from-drive-folder`, {
+export const processBankStatementsFromDrive = async (folderLink, authToken) => {
+  const payload = {
     folder_link: folderLink,
-  });
-  return res.data;
-}
+    auth_token: authToken,
+  };
 
+  const response = await axios.post(
+    `${BASE}/bank-statements/from-drive-folder`,
+    payload,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    }
+  );
+
+  return response.data;
+};

@@ -3,6 +3,7 @@ import { processBankStatementsFromDrive } from "../api";
 
 export default function ProcessBankStatementsDrive() {
   const [driveLink, setDriveLink] = useState("");
+  const [authToken, setAuthToken] = useState(""); // auth token state
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -12,11 +13,17 @@ export default function ProcessBankStatementsDrive() {
       return;
     }
 
+    if (!authToken.trim()) {
+      setStatusMessage("❌ Please provide your auth token.");
+      return;
+    }
+
     setLoading(true);
     setStatusMessage("⏳ Processing bank statements...");
 
     try {
-      const result = await processBankStatementsFromDrive(driveLink.trim());
+      // API call with both drive link and auth token
+      const result = await processBankStatementsFromDrive(driveLink.trim(), authToken.trim());
 
       setStatusMessage(`✅ Processed: ${result.processed.length} statements.`);
     } catch (err) {
@@ -34,7 +41,7 @@ export default function ProcessBankStatementsDrive() {
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Process Bank Statements</h2>
 
       <p className="mb-4 text-gray-700">
-        Paste a <b>public Google Drive folder link</b> containing bank statement images.
+        Paste a <b>public Google Drive folder link</b> containing bank statement images and provide your auth token.
       </p>
 
       <input
@@ -42,6 +49,14 @@ export default function ProcessBankStatementsDrive() {
         placeholder="Google Drive folder link"
         value={driveLink}
         onChange={(e) => setDriveLink(e.target.value)}
+        className="w-full mb-4 border p-2 rounded-md focus:ring-2 focus:ring-green-400"
+      />
+
+      <input
+        type="text"
+        placeholder="Auth token"
+        value={authToken}
+        onChange={(e) => setAuthToken(e.target.value)}
         className="w-full mb-4 border p-2 rounded-md focus:ring-2 focus:ring-green-400"
       />
 

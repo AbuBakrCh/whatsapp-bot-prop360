@@ -921,7 +921,7 @@ def extract_csv_from_image(image_bytes: bytes) -> str:
     response = gen_model.generate_content([prompt, encoded])
     return response.text.strip()
 
-def submit_to_prop360(row: dict):
+def submit_to_prop360(row: dict, auth_token):
     payload = {
         "formId": "68c2eb885d8b5ec633d3be86",
         "indicator": "custom-a462rgbzo",
@@ -942,7 +942,7 @@ def submit_to_prop360(row: dict):
     r = httpx.post(
         PROP360_URL,
         json=payload,
-        headers={"Authorization": f"Bearer {PROP_AUTH_TOKEN}"}
+        headers={"Authorization": f"Bearer {auth_token}"}
     )
     return r.status_code, r.text
 
@@ -964,7 +964,7 @@ async def list_files_in_folder(folder_id: str):
         return res.json().get("files", [])
 
 @fastapi_app.post("/bank-statements/from-drive-folder")
-async def process_from_drive_folder(folder_link: str = Body(..., embed=True)):
+async def process_from_drive_folder(folder_link: str = Body(...), auth_token: str = Body(...)):
     folder_id = extract_folder_id(folder_link)
 
     files = await list_files_in_folder(folder_id)
@@ -996,7 +996,7 @@ async def process_from_drive_folder(folder_link: str = Body(..., embed=True)):
             next(rows, None)
 
             for row in rows:
-                status, response = submit_to_prop360(row)
+                status, response = submit_to_prop360(row, auth_token)
                 all_results.append({
                     "file": f["name"],
                     "row": row,
