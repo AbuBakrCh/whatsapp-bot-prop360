@@ -913,11 +913,31 @@ def extract_csv_from_image(image_bytes: bytes) -> str:
     }
 
     prompt = """
-            Extract all transaction rows from this bank statement.
-            Return ONLY CSV with headers:
-            bank_name, account_type, account_number, currency, value_date, transaction_date, debit_credit_flag, amount, description
-            Dates must be YYYY-MM-DD. Do not add extra text.
-            """
+        You are a CSV extraction engine. Follow instructions exactly.
+    
+        Extract all transaction rows from this bank statement.
+    
+        Return output as *plain CSV*. No markdown. No code blocks. No explanation. No extra text.
+    
+        CSV headers (must appear exactly once, as first line):
+        bank_name,account_type,account_number,currency,value_date,transaction_date,debit_credit_flag,amount,description
+    
+        Example (format only, do not invent values):
+        BankName,Checking,123456,USD,2024-01-01,2024-01-01,DEBIT,100.00,ATM Withdrawal
+    
+        Now extract the real data from the document.
+        If a field is missing, leave it blank.
+        Dates must be YYYY-MM-DD.
+        Description must be preserved exactly as written.
+    
+        Return only raw CSV output.
+    """
+
+    config = {
+        "temperature": 0.0,
+        "thinking": {"max_thought_tokens": 0}  # Disables chain-of-thought (fast!)
+    }
+
     response = gen_model.generate_content([prompt, encoded])
     return response.text.strip()
 
