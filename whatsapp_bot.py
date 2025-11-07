@@ -1,5 +1,4 @@
 import asyncio
-import imghdr
 import csv
 import mimetypes
 import os
