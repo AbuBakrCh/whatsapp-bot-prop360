@@ -915,7 +915,7 @@ def extract_csv_from_image(image_bytes: bytes) -> str:
     prompt = """
             Extract all transaction rows from this bank statement.
             Return ONLY CSV with headers:
-            bank_name, value_date, transaction_date, debit_credit_flag, amount, description
+            bank_name, account_type, account_number, currency, value_date, transaction_date, debit_credit_flag, amount, description
             Dates must be YYYY-MM-DD. Do not add extra text.
             """
     response = gen_model.generate_content([prompt, encoded])
@@ -929,7 +929,7 @@ def submit_to_prop360(row: dict, auth_token):
         "isPublic": False,
         "destructive": False,
         "data": {
-            "field-1757605194423-ofbqnqfso": row.get("bank_name", ""),
+            "field-1757605194423-ofbqnqfso": row.get("bank_name", "") + " _ " + row.get("account_type", "") + " _ " + row.get("account_number", "") + " _ " + row.get("currency", ""),
             "field-1757605079803-icw8ykc19": row.get("value_date", ""),
             "field-1757605069078-p5plna7qr": row.get("transaction_date", ""),
             "field-1757605718340-ue95ozr9u": row.get("debit_credit_flag", ""),
