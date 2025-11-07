@@ -11,6 +11,9 @@ from email.message import EmailMessage
 from time import time
 from urllib.parse import quote
 import re
+from PIL import Image
+import io
+
 
 import google.generativeai as genai
 import httpx
@@ -874,14 +877,17 @@ async def send_bulk_email_drive(drive_link: str = Form(...), sheet_name: str = F
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+def get_image_type(image_bytes: bytes):
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        return img.format.lower()  # 'jpeg', 'png', etc.
+    except Exception:
+        return None
 
 def extract_csv_from_image(image_bytes: bytes) -> str:
-    img_type = imghdr.what(None, image_bytes)  # jpeg, png, etc.
-
-    # Normalize
-    if img_type == "jpg":  # imghdr sometimes returns jpg
-        img_type = "jpeg"
-
+    img_type = get_image_type(image_bytes)
+    if not img_type:
+        raise ValueError("Cannot determine image type")
     mime = f"image/{img_type}"
 
     encoded = {
