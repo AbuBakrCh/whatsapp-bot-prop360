@@ -876,18 +876,36 @@ async def send_bulk_email_drive(drive_link: str = Form(...), sheet_name: str = F
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-def get_image_type(image_bytes: bytes):
+def get_file_type(file_bytes: bytes, filename: str = None):
+    """
+    Determine file type: 'jpeg', 'png', 'pdf', etc.
+    - If PIL can open it → image
+    - If filename ends with .pdf or content starts with PDF signature → pdf
+    """
+    # Try image first
     try:
-        img = Image.open(io.BytesIO(image_bytes))
+        img = Image.open(io.BytesIO(file_bytes))
         return img.format.lower()  # 'jpeg', 'png', etc.
     except Exception:
-        return None
+        pass
+
+    # Check for PDF signature
+    if file_bytes[:4] == b"%PDF" or (filename and filename.lower().endswith(".pdf")):
+        return "pdf"
+
+    return None
 
 def extract_csv_from_image(image_bytes: bytes) -> str:
-    img_type = get_image_type(image_bytes)
-    if not img_type:
+    file_type = get_file_type(image_bytes)
+    if not file_type:
         raise ValueError("Cannot determine image type")
-    mime = f"image/{img_type}"
+
+    if file_type in ["jpeg", "jpg", "png"]:
+        mime = f"image/{file_type if file_type != 'jpg' else 'jpeg'}"
+    elif file_type == "pdf":
+        mime = "application/pdf"
+    else:
+        raise ValueError(f"Unsupported file type: {file_type}")
 
     encoded = {
         "mime_type": mime,
@@ -961,7 +979,8 @@ async def process_from_drive_folder(folder_link: str = Body(..., embed=True)):
             allowed_mimes = [
                 "image/jpeg",
                 "image/png",
-                "image/jpg"
+                "image/jpg",
+                "application/pdf",
             ]
 
             if f["mimeType"] not in allowed_mimes:
