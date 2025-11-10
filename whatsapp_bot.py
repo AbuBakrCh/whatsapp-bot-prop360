@@ -12,6 +12,7 @@ from urllib.parse import quote
 import re
 from PIL import Image
 import io
+from collections import defaultdict
 
 
 import google.generativeai as genai
@@ -895,8 +896,8 @@ def get_file_type(file_bytes: bytes, filename: str = None):
 
     return None
 
-def extract_csv_from_image(image_bytes: bytes) -> str:
-    file_type = get_file_type(image_bytes)
+def extract_csv_from_image(file_bytes: bytes, fields_to_extract: list[str]):
+    file_type = get_file_type(file_bytes)
     if not file_type:
         raise ValueError("Cannot determine image type")
 
@@ -909,54 +910,54 @@ def extract_csv_from_image(image_bytes: bytes) -> str:
 
     encoded = {
         "mime_type": mime,
-        "data": image_bytes
+        "data": file_bytes
     }
 
-    prompt = """
-        You are a CSV extraction engine. Follow instructions exactly.
-    
-        Extract all transaction rows from this bank statement.
-    
-        Return output as *plain CSV*. No markdown. No code blocks. No explanation. No extra text.
-    
-        CSV headers (must appear exactly once, as first line):
-        bank_name,account_type,account_number,currency,value_date,transaction_date,debit_credit_flag,amount,description
-    
-        Example (format only, do not invent values):
-        BankName,Checking,123456,USD,2024-01-01,2024-01-01,DEBIT,100.00,ATM Withdrawal
-    
-        Now extract the real data from the document.
-        If a field is missing, leave it blank.
-        Dates must be YYYY-MM-DD.
-        Description must be preserved exactly as written.
-    
-        Return only raw CSV output.
+    fields_list = ", ".join(fields_to_extract)
+
+    prompt = f"""
+    You are a data extraction engine. Follow instructions exactly.
+
+    Extract the following fields from the document: {fields_list}.
+
+    - Output must be CSV only, no markdown or extra text.
+    - First line must contain these exact headers in the same order: {fields_list}.
+    - Every row must match this column structure.
+    - If a field is missing, leave it blank.
+    - Dates must be normalized to YYYY-MM-DD format.
+    - In numbers, decimal must be shown with . instead of , 
+    - Preserve the content of each field exactly as it appears in the document.
     """
-
-    config = {
-        "temperature": 0.0,
-        "thinking": {"max_thought_tokens": 0}  # Disables chain-of-thought (fast!)
-    }
 
     response = gen_model.generate_content([prompt, encoded])
     return response.text.strip()
 
-def submit_to_prop360(row: dict, auth_token):
+def submit_to_prop360(row: dict, auth_token: str, mapping: dict):
+    """
+    row: extracted CSV row with standardized headers (transaction_date, amount, etc.)
+    mapping: {prop_field_id: 'header1,header2,...'}
+    """
+
+    prop_to_headers = defaultdict(list)
+    for csv_header, prop_field_id in mapping.items():
+        prop_to_headers[prop_field_id].append(csv_header)
+
+    # Step 2: Merge values for each prop_field_id
+    data_payload = {}
+    for prop_field_id, headers in prop_to_headers.items():
+        merged_value = " _ ".join([row.get(h, "") for h in headers])
+        data_payload[prop_field_id] = merged_value
+
+    data_payload["attachedForms"] = []
+    data_payload["field-1757605870503-s1lu31him"] = "Abu-Bakr"
+
     payload = {
         "formId": "68c2eb885d8b5ec633d3be86",
         "indicator": "custom-a462rgbzo",
         "owner": "XkPoOtdoSxSe5CbRfK4zZBmaZnR2",
         "isPublic": False,
         "destructive": False,
-        "data": {
-            "field-1757605194423-ofbqnqfso": row.get("bank_name", "") + " _ " + row.get("account_type", "") + " _ " + row.get("account_number", "") + " _ " + row.get("currency", ""),
-            "field-1757605079803-icw8ykc19": row.get("value_date", ""),
-            "field-1757605069078-p5plna7qr": row.get("transaction_date", ""),
-            "field-1757605718340-ue95ozr9u": row.get("debit_credit_flag", ""),
-            "field-1757605508754-uea4iadqd": row.get("amount", ""),
-            "field-1758478917909-jqxoz2s3h": row.get("description"),
-            "attachedForms": []
-        }
+        "data": data_payload
     }
 
     r = httpx.post(
@@ -964,6 +965,7 @@ def submit_to_prop360(row: dict, auth_token):
         json=payload,
         headers={"Authorization": f"Bearer {auth_token}"}
     )
+
     return r.status_code, r.text
 
 def extract_folder_id(url: str):
@@ -984,7 +986,10 @@ async def list_files_in_folder(folder_id: str):
         return res.json().get("files", [])
 
 @fastapi_app.post("/bank-statements/from-drive-folder")
-async def process_from_drive_folder(folder_link: str = Body(...), auth_token: str = Body(...)):
+async def process_from_drive_folder(folder_link: str = Body(...), auth_token: str = Body(...), mapping: dict = Body(None)):
+    if not mapping:
+        return {"processed": [], "message": "No mapping provided, nothing to process."}
+
     folder_id = extract_folder_id(folder_link)
 
     files = await list_files_in_folder(folder_id)
@@ -992,6 +997,7 @@ async def process_from_drive_folder(folder_link: str = Body(...), auth_token: st
     if not files:
         return {"processed": []}
 
+    fields_to_extract = list(mapping.keys()) if mapping else []
     all_results = []
 
     async with httpx.AsyncClient() as client:
@@ -1010,13 +1016,12 @@ async def process_from_drive_folder(folder_link: str = Body(...), auth_token: st
             response = await client.get(download_url, follow_redirects=True)
             image_bytes = response.content
 
-            csv_text = extract_csv_from_image(image_bytes)
+            csv_text = extract_csv_from_image(image_bytes, fields_to_extract)
 
             rows = csv.DictReader(csv_text.splitlines())
-            next(rows, None)
 
             for row in rows:
-                status, response = submit_to_prop360(row, auth_token)
+                status, response = submit_to_prop360(row, auth_token, mapping)
                 all_results.append({
                     "file": f["name"],
                     "row": row,

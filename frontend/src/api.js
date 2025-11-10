@@ -47,10 +47,11 @@ export async function sendBulkEmailFile(driveLink) {
   return response.data;
 }
 
-export const processBankStatementsFromDrive = async (folderLink, authToken) => {
+export const processBankStatementsFromDrive = async (folderLink, authToken, mapping) => {
   const payload = {
     folder_link: folderLink,
     auth_token: authToken,
+    mapping
   };
 
   const response = await axios.post(
