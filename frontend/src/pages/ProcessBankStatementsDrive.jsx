@@ -15,6 +15,17 @@ const PROP_FIELDS = [
   { id: "field-1758699529035-xp7lumgx5", label: "Document Type" },
   { id: "field-1759392145178-qbx06ungl", label: "Month" },
   { id: "field-1759392151218-bmx5iidn6", label: "Year" },
+  { id: "field-1763025141515-wp3fyie36", label: "Invoice Issuer" },
+  { id: "field-1763025146443-1t1qiizo0", label: "Invoice Recipient" },
+  { id: "field-1763025149106-5rohv9ksd", label: "Invoice Issuer Tax Id" },
+  { id: "field-1763025938971-3vmgk1kn5", label: "Invoice Recipient Tax Id" },
+  { id: "field-1763025941333-lfsl04kdf", label: "Invoice Number" },
+  { id: "field-1763025943928-96pgpyzij", label: "Invoice Issue Date" },
+  { id: "field-1763025946163-pwe00nucs", label: "Amount Excluding VAT" },
+  { id: "field-1763026912693-45fgrq8y4", label: "VAT Ratio (%)" },
+  { id: "field-1763026916002-uhnzp35vu", label: "VAT Amount" },
+  { id: "field-1763026946825-83xow7nk0", label: "Total Amount Including VAT" },
+  { id: "field-1763033836733-boywehpec", label: "Matching Number" },
 ];
 
 export default function ProcessBankStatementsDrive() {
