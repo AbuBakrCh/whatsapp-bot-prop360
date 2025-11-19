@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import SendBulkEmail from "./SendBulkEmail"; // use your correct component name
 import ProcessBankStatementsDrive from "./ProcessBankStatementsDrive";
+import ShowDuplicates from "./ShowDuplicates";
 
 export default function Utilities() {
   return (
@@ -21,6 +22,7 @@ export default function Utilities() {
       <div className="flex-1 p-6 space-y-8">
         <SendBulkEmail />
         <ProcessBankStatementsDrive />
+        <ShowDuplicates />
       </div>
     </div>
   );

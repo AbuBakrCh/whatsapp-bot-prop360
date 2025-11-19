@@ -68,7 +68,7 @@ PROP_AUTH_TOKEN = os.getenv("PROP360_BEARER_TOKEN")
 # ----------------------------
 # --- MongoDB (motor async)
 # ----------------------------
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 print(MONGO_URI)
 MONGO_DBNAME = os.getenv("MONGO_DBNAME", "whatsapp_chat")
 
@@ -76,6 +76,14 @@ mongo_client = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client[MONGO_DBNAME]
 messages_collection = db["messages"]
 configs_collection = db['configs']
+
+# ----------------------------
+
+PROP_MONGO_URI = os.getenv("PROP_MONGO_URI", "mongodb://mongo:27017")
+PROP_MONGO_DBNAME = os.getenv("PROP_MONGO_DBNAME", "prop360")
+
+prop_mongo_client = AsyncIOMotorClient(PROP_MONGO_URI)
+prop_db = prop_mongo_client[PROP_MONGO_DBNAME]
 
 # ----------------------------
 # --- Socket.IO server
@@ -1030,6 +1038,60 @@ async def process_from_drive_folder(folder_link: str = Body(...), auth_token: st
                 })
 
     return {"processed": all_results}
+
+
+@fastapi_app.get("/utilities/duplicates")
+async def get_duplicate_fields():
+    """
+    Returns duplicate values for name, phone, email along with their formIds.
+    Matches the MongoDB aggregation you shared.
+    """
+    pipeline = [
+        {
+            "$project": {
+                "formId": "$formId",
+                "name": "$data.field-1741682291001-f3wt601el",
+                "phone": "$data.field-1741682301819-kmo9vb6gp",
+                "email": "$data.field-1741682329992-qno1qzxi3"
+            }
+        },
+        {
+            "$project": {
+                "fields": [
+                    {"k": "name", "v": "$name", "formId": "$formId"},
+                    {"k": "phone", "v": "$phone", "formId": "$formId"},
+                    {"k": "email", "v": "$email", "formId": "$formId"}
+                ]
+            }
+        },
+        {"$unwind": "$fields"},
+        {
+            "$group": {
+                "_id": {"field": "$fields.k", "value": "$fields.v"},
+                "formIds": {"$addToSet": "$fields.formId"},
+                "count": {"$sum": 1}
+            }
+        },
+        {
+            "$match": {
+                "count": {"$gt": 1},
+                "_id.value": {"$ne": None}
+            }
+        }
+    ]
+
+    cursor = prop_db.formdatas.aggregate(pipeline)
+    results = []
+    async for doc in cursor:
+        results.append({
+            "field": doc["_id"]["field"],
+            "value": doc["_id"]["value"],
+            "formIds": doc["formIds"],
+            "count": doc["count"]
+        })
+
+    return {"duplicates": results}
+
 
 # --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):

@@ -67,3 +67,13 @@ export const processBankStatementsFromDrive = async (folderLink, authToken, mapp
 
   return response.data;
 };
+
+export async function getDuplicates() {
+  try {
+    const response = await axios.get(`${BASE}/utilities/duplicates`);
+    return response.data;
+  } catch (err) {
+    console.error("Error fetching duplicates:", err);
+    throw err;
+  }
+}
