@@ -1048,6 +1048,11 @@ async def get_duplicate_fields():
     """
     pipeline = [
         {
+            "$match": {
+                "indicator": "contacts"
+            }
+        },
+        {
             "$project": {
                 "formId": "$formId",
                 "name": "$data.field-1741682291001-f3wt601el",
