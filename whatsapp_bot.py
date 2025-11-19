@@ -1049,7 +1049,8 @@ async def get_duplicate_fields():
     pipeline = [
         {
             "$match": {
-                "indicator": "contacts"
+                "indicator": "contacts",
+                "merchantId": "34137234-52fe-430c-a97d-df3e16525e71"
             }
         },
         {
