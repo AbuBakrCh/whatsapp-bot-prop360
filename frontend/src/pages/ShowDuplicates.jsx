@@ -46,7 +46,7 @@ export default function ShowDuplicates() {
                 <th className="px-3 py-2">Field</th>
                 <th className="px-3 py-2">Value</th>
                 <th className="px-3 py-2">Count</th>
-                <th className="px-3 py-2">Form IDs</th>
+                <th className="px-3 py-2">IDs</th>
               </tr>
             </thead>
             <tbody>
@@ -55,7 +55,7 @@ export default function ShowDuplicates() {
                   <td className="px-3 py-2">{dup.field}</td>
                   <td className="px-3 py-2">{dup.value}</td>
                   <td className="px-3 py-2">{dup.count}</td>
-                  <td className="px-3 py-2">{dup.formIds.join(", ")}</td>
+                  <td className="px-3 py-2">{dup.ids.join(", ")}</td>
                 </tr>
               ))}
             </tbody>

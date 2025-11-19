@@ -342,7 +342,7 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
-#embeddings, texts = build_index(df)
+embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -1055,7 +1055,7 @@ async def get_duplicate_fields():
         },
         {
             "$project": {
-                "formId": "$formId",
+                "_id": "$_id",
                 "name": "$data.field-1741774547654-ngd30kdcz",
                 "phone": "$data.field-1741778098761-w10f6zg6y",
                 "email": "$data.field-1741774690043-v7jylsjj2"
@@ -1064,9 +1064,9 @@ async def get_duplicate_fields():
         {
             "$project": {
                 "fields": [
-                    {"k": "name", "v": "$name", "formId": "$formId"},
-                    {"k": "phone", "v": "$phone", "formId": "$formId"},
-                    {"k": "email", "v": "$email", "formId": "$formId"}
+                    {"k": "name", "v": "$name", "_id": "$_id"},
+                    {"k": "phone", "v": "$phone", "_id": "$_id"},
+                    {"k": "email", "v": "$email", "_id": "$_id"}
                 ]
             }
         },
@@ -1074,7 +1074,7 @@ async def get_duplicate_fields():
         {
             "$group": {
                 "_id": {"field": "$fields.k", "value": "$fields.v"},
-                "formIds": {"$addToSet": "$fields.formId"},
+                "ids": {"$addToSet": "$fields._id"},
                 "count": {"$sum": 1}
             }
         },
@@ -1092,7 +1092,7 @@ async def get_duplicate_fields():
         results.append({
             "field": doc["_id"]["field"],
             "value": doc["_id"]["value"],
-            "formIds": doc["formIds"],
+            "ids": [str(_id) for _id in doc["ids"]],
             "count": doc["count"]
         })
 
