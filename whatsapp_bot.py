@@ -342,7 +342,7 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -1055,9 +1055,9 @@ async def get_duplicate_fields():
         {
             "$project": {
                 "formId": "$formId",
-                "name": "$data.field-1741682291001-f3wt601el",
-                "phone": "$data.field-1741682301819-kmo9vb6gp",
-                "email": "$data.field-1741682329992-qno1qzxi3"
+                "name": "$data.field-1741774547654-ngd30kdcz",
+                "phone": "$data.field-1741778098761-w10f6zg6y",
+                "email": "$data.field-1741774690043-v7jylsjj2"
             }
         },
         {
