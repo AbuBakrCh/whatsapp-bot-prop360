@@ -78,11 +78,12 @@ export async function getDuplicates() {
   }
 }
 
-export async function generateClientMessages(date, prompt) {
+export async function generateClientMessages(date, prompt, merchantId) {
   try {
     const response = await axios.post(`${BASE}/utilities/activity/client-messages`, {
       date,
       prompt,
+      merchantId
     });
     return response.data;
   } catch (err) {

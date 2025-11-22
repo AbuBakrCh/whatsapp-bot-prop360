@@ -6,13 +6,14 @@ export default function GenerateClientMessages() {
 
   const [date, setDate] = useState(""); // only date
   const [prompt, setPrompt] = useState(defaultPrompt);
+  const [merchantId, setMerchantId] = useState("34137234-52fe-430c-a97d-df3e16525e71");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const handleGenerateMessages = async () => {
-    if (!date || !prompt) {
-      setErrorMessage("Please provide both date and prompt.");
+    if (!date || !prompt || !merchantId) {
+      setErrorMessage("Please provide date, prompt, and merchant ID.");
       setResults([]);
       return;
     }
@@ -27,7 +28,7 @@ export default function GenerateClientMessages() {
       const localDate = new Date(year, month - 1, day, 0, 0, 0); // local midnight
       const utcDate = localDate.toISOString(); // UTC
 
-      const data = await generateClientMessages(utcDate, prompt);
+      const data = await generateClientMessages(utcDate, prompt, merchantId);
 
       // Handle API errors in response
       if (data.error) {
@@ -52,32 +53,49 @@ export default function GenerateClientMessages() {
     <div className="max-w-4xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Generate Client Messages</h2>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-4 items-start">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="border border-slate-300 rounded-md px-3 py-2"
-        />
-        <textarea
-          value={prompt}
-          placeholder="Enter prompt for OpenAI"
-          onChange={(e) => setPrompt(e.target.value)}
-          className="border border-slate-300 rounded-md px-3 py-2 flex-1 resize-none h-48 md:h-56"
-          rows={8}
-        />
-        <div className="flex items-center">
-          <button
-            onClick={handleGenerateMessages}
-            disabled={loading}
-            className={`px-4 py-2 rounded-md text-white font-medium transition ${
-              loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
-            }`}
-          >
-            {loading ? "Generating..." : "Generate"}
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4 mb-4 w-full">
+      {/* Row 1: date + merchantId */}
+      <div className="flex flex-row items-center gap-4 w-full">
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="border border-slate-300 rounded-md px-3 py-2"
+      />
+
+      <input
+        type="text"
+        value={merchantId}
+        placeholder="Merchant ID"
+        onChange={(e) => setMerchantId(e.target.value)}
+        className="border border-slate-300 rounded-md px-3 py-2 flex-grow"
+      />
+    </div>
+
+
+      {/* Row 2: prompt textarea (full width) */}
+      <div className="w-full flex flex-col gap-4">
+      <textarea
+        value={prompt}
+        placeholder="Enter prompt for OpenAI"
+        onChange={(e) => setPrompt(e.target.value)}
+        className="border border-slate-300 rounded-md px-3 py-2 w-full h-44 md:h-56 resize-none"
+        rows={8}
+      />
+
+      <button
+        onClick={handleGenerateMessages}
+        disabled={loading}
+        className={`px-4 py-2 rounded-md text-white font-medium transition ${
+          loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
+        }`}
+      >
+    {loading ? "Generating..." : "Generate"}
+    </button>
+    </div>
+
+    </div>
+
 
       {/* Show API error messages */}
       {errorMessage && <div className="mb-4 text-red-600">{errorMessage}</div>}

@@ -1101,7 +1101,7 @@ async def get_duplicate_fields():
 
 
 @fastapi_app.post("/utilities/activity/client-messages")
-async def activity_client_messages(date: str = Body(...), prompt: str = Body(...)):
+async def activity_client_messages(date: str = Body(...), prompt: str = Body(...), merchantId: str = Body(...)):
     """
     Generate client message using OpenAI for formdatas after a given date.
     - date: YYYY-MM-DD
@@ -1112,7 +1112,7 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
         pipeline = [
             {
                 "$match": {
-                    "merchantId": "3124d713-067b-427c-9672-1cfee6058246",
+                    "merchantId": merchantId,
                     "indicator": "custom-wyey07pb7",
                     "$or": [
                         {"data.field-1763667758197-dg5h28foy": {"$exists": False}},
