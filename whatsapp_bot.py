@@ -1169,6 +1169,150 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
         traceback.print_exc()
         return {"error": str(e)}
 
+@fastapi_app.post("/utilities/activity/send-emails")
+async def send_activity_emails(merchantId: str = Body(...)):
+    """
+    Send activity update emails to clients whose records are marked 'Ready to Send'.
+    Steps:
+    - Filter records by indicator 'custom-wyey07pb7' and status 'Ready to Send'
+    - Extract client field and parse PID (value after the pipe)
+    - Query the same collection for PID to retrieve the client's email
+    - Send the email (email-sending code will be added)
+    """
+    try:
+        # Step 1: Fetch all formdatas where status is "Ready to Send"
+        pipeline = [
+            {
+                "$match": {
+                    "merchantId": merchantId,
+                    "indicator": "custom-wyey07pb7",
+                    "data.field-1763667758197-dg5h28foy": "Ready to Send"
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "clientRaw": "$data.field-1760213170764-fhjgcg5u0",
+                    "emailMessage": "$data.field-1762159054336-n6b4ihv37"
+                }
+            }
+        ]
+
+        cursor = prop_db.formdatas.aggregate(pipeline)
+        sent_count = 0
+        results = []
+
+        async for doc in cursor:
+            client_raw = doc.get("clientRaw", "")
+            email_message = doc.get("emailMessage")
+            if not client_raw or "|" not in client_raw or not email_message:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "status": "Skipped: invalid client format or missing email content",
+                    "clientRaw": client_raw,
+                    "emailMessagePresent": bool(email_message)
+                })
+                continue
+
+            # Extract PID
+            pid = client_raw.split("|")[-1].strip()
+            if not pid:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "status": "Empty pid after parsing",
+                    "clientRaw": client_raw
+                })
+                continue
+
+            try:
+                pid_float = float(pid)
+            except ValueError:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "status": f"PID '{pid}' is not a valid number",
+                    "clientRaw": client_raw
+                })
+                continue
+
+            # Step 2: Search same collection for matching PID to get email
+            contact_doc = await prop_db.formdatas.find_one(
+                {
+                    "pid": pid_float
+                }
+            )
+
+            if not contact_doc:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "status": "No contact record found",
+                    "pid": pid_float
+                })
+                continue
+
+            emailAddr = contact_doc["data"]["field-1741774690043-v7jylsjj2"]
+
+            # --- Step 3: Send email (you will paste your code here) ---
+            # send_email(to=email, body=email_message)
+            try:
+                send_email(to=emailAddr, subject="Activity update for Your Property", body=email_message)
+            except Exception as e:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "email": emailAddr,
+                    "pid": pid,
+                    "status": f"Failed to send email: {e}"
+                })
+                continue
+
+            # Step 4: Update status to "Sent"
+            await prop_db.formdatas.update_one(
+                {"_id": ObjectId(doc["_id"])},
+                {"$set": {"data.field-1763667758197-dg5h28foy": "Sent"}}
+            )
+
+            results.append({
+                "id": str(doc["_id"]),
+                "email": emailAddr,
+                "pid": pid,
+                "status": "Email sent",
+                "messagePreview": email_message[:120] if email_message else None
+            })
+            sent_count += 1
+
+        return {"processed": results, "sent_count": sent_count}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+def send_email(to: str, subject: str, body: str):
+    """
+    Send an email via Gmail SMTP.
+    - to: recipient email address
+    - subject: email subject
+    - body: email body (plain text or HTML)
+    """
+    EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
+    EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        raise ValueError("Missing EMAIL_ADDRESS or EMAIL_APP_PASSWORD environment variables")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = to
+
+    # Detect HTML content
+    if "<" in body and ">" in body:
+        msg.add_alternative(body, subtype="html")
+    else:
+        msg.set_content(body)
+
+    # Open SMTP and send
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        smtp.send_message(msg)
+
 # --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):
     url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
