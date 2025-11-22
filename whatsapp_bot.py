@@ -13,6 +13,7 @@ import re
 from PIL import Image
 import io
 from collections import defaultdict
+from bson import ObjectId
 
 
 import google.generativeai as genai
@@ -1098,6 +1099,75 @@ async def get_duplicate_fields():
 
     return {"duplicates": results}
 
+
+@fastapi_app.post("/utilities/activity/client-messages")
+async def activity_client_messages(date: str = Body(...), prompt: str = Body(...)):
+    """
+    Generate client message using OpenAI for formdatas after a given date.
+    - date: YYYY-MM-DD
+    - prompt: string to guide OpenAI completion
+    """
+    try:
+        query_date = datetime.fromisoformat(date.replace("Z", "+00:00"))
+        pipeline = [
+            {
+                "$match": {
+                    "merchantId": "3124d713-067b-427c-9672-1cfee6058246",
+                    "indicator": "custom-wyey07pb7",
+                    "$or": [
+                        {"data.field-1763667758197-dg5h28foy": {"$exists": False}},
+                        {"data.field-1763667758197-dg5h28foy": {"$nin": ["Sent", "Ready to Send"]}}
+                    ]
+                }
+            },
+            {
+                "$addFields": {
+                    "parsedDate": {
+                        "$dateFromString": {"dateString": "$data.field-1760213127501-vd61epis6"}
+                    }
+                }
+            },
+            {
+                "$match": {
+                    "parsedDate": {"$gte": query_date}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "client": "$data.field-1760213170764-fhjgcg5u0",
+                    "property": "$data.field-1760213192233-byk1fbajy",
+                    "activityDescription": "$data.field-1760213212062-ask5v2fuy"
+                }
+            }
+        ]
+
+        cursor = prop_db.formdatas.aggregate(pipeline)
+        results = []
+        async for doc in cursor:
+            # Compose OpenAI prompt
+            openai_prompt = f"{prompt}\n\nClient: {doc.get('client')}\nProperty: {doc.get('property')}\nActivity: {doc.get('activityDescription')}"
+            generated_text = generate_text_with_model(openai_prompt, model_name="gpt-4o", temperature=0.3)
+
+            # Update MongoDB document
+            await prop_db.formdatas.update_one(
+                {"_id": ObjectId(doc["_id"])},
+                {"$set": {"data.field-1762159054336-n6b4ihv37": generated_text}}
+            )
+
+            results.append({
+                "id": str(doc["_id"]),
+                "client": doc.get("client"),
+                "property": doc.get("property"),
+                "activityDescription": doc.get("activityDescription"),
+                "generatedMessage": generated_text
+            })
+
+        return {"processed": results, "count": len(results)}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
 
 # --- Helper to send whatsapp messages (async) ---
 async def send_whatsapp_message(to, message):

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import SendBulkEmail from "./SendBulkEmail"; // use your correct component name
 import ProcessBankStatementsDrive from "./ProcessBankStatementsDrive";
 import ShowDuplicates from "./ShowDuplicates";
+import GenerateClientMessages from "./GenerateClientMessages"
 
 export default function Utilities() {
   return (
@@ -23,6 +24,7 @@ export default function Utilities() {
         <SendBulkEmail />
         <ProcessBankStatementsDrive />
         <ShowDuplicates />
+        <GenerateClientMessages />
       </div>
     </div>
   );

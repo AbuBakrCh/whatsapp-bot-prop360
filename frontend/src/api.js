@@ -77,3 +77,16 @@ export async function getDuplicates() {
     throw err;
   }
 }
+
+export async function generateClientMessages(date, prompt) {
+  try {
+    const response = await axios.post(`${BASE}/utilities/activity/client-messages`, {
+      date,
+      prompt,
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error generating client messages:", err);
+    throw err;
+  }
+}
