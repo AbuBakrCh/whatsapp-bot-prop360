@@ -1159,7 +1159,12 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
             # Update MongoDB document
             await prop_db.formdatas.update_one(
                 {"_id": ObjectId(doc["_id"])},
-                {"$set": {"data.field-1762159054336-n6b4ihv37": generated_text}}
+                {"$set":
+                    {
+                    "data.field-1762159054336-n6b4ihv37": generated_text,
+                    "data.field-1763667758197-dg5h28foy": "Ready to Review"
+                    }
+                }
             )
 
             results.append({
