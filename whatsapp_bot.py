@@ -1112,11 +1112,18 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
         pipeline = [
             {
                 "$match": {
-                    "merchantId": merchantId,
                     "indicator": "custom-wyey07pb7",
                     "$or": [
-                        {"data.field-1763667758197-dg5h28foy": {"$exists": False}},
-                        {"data.field-1763667758197-dg5h28foy": {"$nin": ["Sent", "Ready to Send"]}}
+                        {"sharedWithMerchants": merchantId},
+                        {"merchantId": merchantId}
+                    ],
+                    "$and": [
+                        {
+                            "$or": [
+                                {"data.field-1763667758197-dg5h28foy": {"$exists": False}},
+                                {"data.field-1763667758197-dg5h28foy": {"$nin": ["Sent", "Ready to Send"]}}
+                            ]
+                        }
                     ]
                 }
             },
