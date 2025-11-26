@@ -1182,7 +1182,7 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
         return {"error": str(e)}
 
 @fastapi_app.post("/utilities/activity/send-emails")
-async def send_activity_emails(merchantId: str = Body(...)):
+async def send_activity_emails(merchantId: str = Body(...), date: str = Body(...)):
     """
     Send activity update emails to clients whose records are marked 'Ready to Send'.
     Steps:
@@ -1192,6 +1192,7 @@ async def send_activity_emails(merchantId: str = Body(...)):
     - Send the email (email-sending code will be added)
     """
     try:
+        query_date = datetime.fromisoformat(date.replace("Z", "+00:00"))
         # Step 1: Fetch all formdatas where status is "Ready to Send"
         pipeline = [
             {
@@ -1202,6 +1203,18 @@ async def send_activity_emails(merchantId: str = Body(...)):
                     ],
                     "indicator": "custom-wyey07pb7",
                     "data.field-1763667758197-dg5h28foy": "Ready to Send"
+                }
+            },
+            {
+                "$addFields": {
+                    "parsedDate": {
+                        "$dateFromString": {"dateString": "$data.field-1760213127501-vd61epis6"}
+                    }
+                }
+            },
+            {
+                "$match": {
+                    "parsedDate": {"$gte": query_date}
                 }
             },
             {

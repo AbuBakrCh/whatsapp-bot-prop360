@@ -51,17 +51,20 @@ export default function GenerateClientMessages() {
   };
 
   const handleSendEmails = async () => {
-    if (!merchantId) {
-      setEmailResponse("Merchant ID is required to send emails.");
-      return;
-    }
+  if (!merchantId || !date) {
+    setEmailResponse("Date and Merchant ID are required to send emails.");
+    return;
+  }
 
-    setEmailLoading(true);
-    setEmailResponse("");
+  setEmailLoading(true);
+  setEmailResponse("");
 
-    try {
-      const data = await sendActivityEmails(merchantId);
+  try {
+    const [year, month, day] = date.split("-").map(Number);
+    const localDate = new Date(year, month - 1, day, 0, 0, 0);
+    const utcDate = localDate.toISOString();
 
+    const data = await sendActivityEmails(merchantId, utcDate);
       if (data.error) {
         setEmailResponse(data.error);
       } else {

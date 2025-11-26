@@ -92,10 +92,11 @@ export async function generateClientMessages(date, prompt, merchantId) {
   }
 }
 
-export async function sendActivityEmails(merchantId) {
+export async function sendActivityEmails(merchantId, date) {
   try {
     const response = await axios.post(`${BASE}/utilities/activity/send-emails`,
-      merchantId
+      merchantId,
+      date
     );
     return response.data;
   } catch (err) {
