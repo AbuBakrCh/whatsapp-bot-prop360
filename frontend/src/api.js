@@ -94,13 +94,16 @@ export async function generateClientMessages(date, prompt, merchantId) {
 
 export async function sendActivityEmails(merchantId, date) {
   try {
-    const response = await axios.post(`${BASE}/utilities/activity/send-emails`,
-      merchantId,
-      date
+    const response = await axios.post(
+      `${BASE}/utilities/activity/send-emails`,
+      {
+        merchantId,
+        date
+      }
     );
     return response.data;
   } catch (err) {
-    console.error("Error generating client messages:", err);
+    console.error("Error sending emails:", err);
     throw err;
   }
 }
