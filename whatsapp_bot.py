@@ -1121,7 +1121,7 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
                         {
                             "$or": [
                                 {"data.field-1763667758197-dg5h28foy": {"$exists": False}},
-                                {"data.field-1763667758197-dg5h28foy": {"$nin": ["Sent", "Ready to Send"]}}
+                                {"data.field-1763667758197-dg5h28foy": {"$nin": ["Sent", "Ready to Send", "Will Not Be Sent"]}}
                             ]
                         }
                     ]
