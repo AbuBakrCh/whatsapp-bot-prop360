@@ -442,7 +442,7 @@ async def receive(request: Request):
         # --- Prevent duplicate replies ---
         if message_id in processed_message_ids:
             print(f"⚠️ Duplicate message detected: {message_id} — skipping")
-            return "EVENT_RECEIVED", 200
+            return "EVENT_RECEIVED", 204
         processed_message_ids.add(message_id)
 
         # Don't lower-case message for storage — keep original for display. Keep lowercase for semantic search if desired.
@@ -1196,7 +1196,10 @@ async def send_activity_emails(merchantId: str = Body(...)):
         pipeline = [
             {
                 "$match": {
-                    "merchantId": merchantId,
+                    "$or": [
+                        { "merchantId": merchantId },
+                        { "sharedWithMerchants": merchantId }
+                    ],
                     "indicator": "custom-wyey07pb7",
                     "data.field-1763667758197-dg5h28foy": "Ready to Send"
                 }
