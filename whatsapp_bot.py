@@ -1277,7 +1277,16 @@ async def send_activity_emails(merchantId: str = Body(...), date: str = Body(...
                 })
                 continue
 
-            emailAddr = contact_doc["data"]["field-1741774690043-v7jylsjj2"]
+            emailAddr = contact_doc.get("data", {}).get("field-1741774690043-v7jylsjj2")
+
+            if not emailAddr:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "pid": pid,
+                    "status": "Email field missing for contact",
+                    "availableFields": list(contact_doc.get("data", {}).keys())
+                })
+                continue
 
             # --- Step 3: Send email (you will paste your code here) ---
             # send_email(to=email, body=email_message)
