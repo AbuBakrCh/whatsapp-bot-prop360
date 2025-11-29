@@ -1,18 +1,34 @@
-import React, { useState } from "react";
-import { generateClientMessages, sendActivityEmails } from "../api";
+import React, { useState, useEffect } from "react";
+import { generateClientMessages, sendActivityEmails, savePrompt, getPrompt } from "../api";
 
 export default function GenerateClientMessages() {
-  const defaultPrompt = `I am Kostas Arslanoğlu, i am the owner of the company . you write the message on my behalf and you sign by my name  . The email will start by saluting the client with its name and surname , the first raw of the message will start with title ,  stating the address and the name of the flat -  Compose a formal, professional, and polite email to a client providing an update on the management of their property. Include a clear subject line and email content that mentions the client and their property description, describing the activities performed. İn the end of the email you will say to the client that he will continue his communication with the department and the person who speaks up to now . The email that you will write is explanatory and confirms the follow up and the survailance of me  . Keep the message concise and courteous, ending only with “Saygılarımla ".  Ensure the meaning remains exactly the same without adding any new information or context. write all the message in turkish . you exctract info only from the activity description , you get the address the number of the flat and the neighborhood from property section and the person information from contact section  . you will not translate any other information from property only adress flat number and neighbourhood , you will not translate any other informatino from the contact info , you will extract only name and surname`;
-
   const [date, setDate] = useState("");
-  const [prompt, setPrompt] = useState(defaultPrompt);
+  const [prompt, setPrompt] = useState(""); // fetched from backend on load
   const [merchantId, setMerchantId] = useState("34137234-52fe-430c-a97d-df3e16525e71");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
 
   const [generateError, setGenerateError] = useState("");
   const [emailResponse, setEmailResponse] = useState("");
+  const [promptSavedMessage, setPromptSavedMessage] = useState("");
+
+  // Fetch prompt once on page load
+  useEffect(() => {
+    const fetchPrompt = async () => {
+      try {
+        const res = await getPrompt("timetable_activity_translation"); // fixed prompt ID
+        if (!res.error && res.prompt_text) {
+          setPrompt(res.prompt_text);
+        }
+      } catch (err) {
+        console.error("Failed to fetch prompt", err);
+      }
+    };
+
+    fetchPrompt();
+  }, []);
 
   const handleGenerateMessages = async () => {
     if (!date || !prompt || !merchantId) {
@@ -51,20 +67,21 @@ export default function GenerateClientMessages() {
   };
 
   const handleSendEmails = async () => {
-  if (!merchantId || !date) {
-    setEmailResponse("Date and Merchant ID are required to send emails.");
-    return;
-  }
+    if (!merchantId || !date) {
+      setEmailResponse("Date and Merchant ID are required to send emails.");
+      return;
+    }
 
-  setEmailLoading(true);
-  setEmailResponse("");
+    setEmailLoading(true);
+    setEmailResponse("");
 
-  try {
-    const [year, month, day] = date.split("-").map(Number);
-    const localDate = new Date(year, month - 1, day, 0, 0, 0);
-    const utcDate = localDate.toISOString();
+    try {
+      const [year, month, day] = date.split("-").map(Number);
+      const localDate = new Date(year, month - 1, day, 0, 0, 0);
+      const utcDate = localDate.toISOString();
 
-    const data = await sendActivityEmails(merchantId, utcDate);
+      const data = await sendActivityEmails(merchantId, utcDate);
+
       if (data.error) {
         setEmailResponse(data.error);
       } else {
@@ -75,6 +92,27 @@ export default function GenerateClientMessages() {
       setEmailResponse(err.response?.data?.error || err.message || "Failed to send emails");
     } finally {
       setEmailLoading(false);
+    }
+  };
+
+  const handleSavePrompt = async () => {
+    if (!prompt.trim()) return;
+
+    setSavingPrompt(true);
+    setPromptSavedMessage("");
+
+    try {
+      const res = await savePrompt("timetable_activity_translation", prompt); // save under same ID
+
+      if (res.error) {
+        setPromptSavedMessage("Failed to save prompt.");
+      } else {
+        setPromptSavedMessage("Prompt saved successfully!");
+      }
+    } catch (err) {
+      setPromptSavedMessage("Failed to save prompt.");
+    } finally {
+      setSavingPrompt(false);
     }
   };
 
@@ -110,23 +148,41 @@ export default function GenerateClientMessages() {
             rows={8}
           />
 
-          {/* Generate Messages Button full width */}
-          <button
-            onClick={handleGenerateMessages}
-            disabled={loading}
-            className={`w-full px-4 py-2 rounded-md text-white font-medium transition ${
-              loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
-            }`}
-          >
-            {loading ? "Generating..." : "Generate"}
-          </button>
+          {/* Buttons Row */}
+          <div className="flex flex-row gap-3">
+            <button
+              onClick={handleGenerateMessages}
+              disabled={loading}
+              className={`w-full px-4 py-2 rounded-md text-white font-medium transition ${
+                loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
+              }`}
+            >
+              {loading ? "Generating..." : "Generate"}
+            </button>
+
+            <button
+              onClick={handleSavePrompt}
+              disabled={savingPrompt}
+              className={`w-48 px-4 py-2 rounded-md text-white font-medium transition ${
+                savingPrompt ? "bg-purple-300 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"
+              }`}
+            >
+              {savingPrompt ? "Saving..." : "Save Prompt"}
+            </button>
+          </div>
+
+          {promptSavedMessage && (
+            <p className={promptSavedMessage.includes("successfully") ? "text-green-600" : "text-red-600"}>
+              {promptSavedMessage}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Generate Messages Error */}
+      {/* Errors */}
       {generateError && <div className="mb-4 text-red-600">{generateError}</div>}
 
-      {/* Generated Messages Table */}
+      {/* Results */}
       {results.length > 0 && (
         <div className="overflow-x-auto max-h-96 overflow-y-auto border-t border-slate-200 pt-2">
           <table className="w-full text-sm text-left text-gray-700">
@@ -152,12 +208,11 @@ export default function GenerateClientMessages() {
         </div>
       )}
 
-      {/* Show "No messages generated yet" */}
       {results.length === 0 && !loading && !generateError && (
         <p className="text-gray-600">No messages generated yet.</p>
       )}
 
-      {/* Send Activity Emails Button & Response */}
+      {/* Send Emails */}
       <div className="mt-4 flex flex-col gap-2">
         <button
           onClick={handleSendEmails}
@@ -169,7 +224,6 @@ export default function GenerateClientMessages() {
           {emailLoading ? "Sending Emails..." : "Send Activity Emails"}
         </button>
 
-        {/* Email Response / Error */}
         {emailResponse && (
           <p className={`mt-2 ${emailResponse.includes("successfully") ? "text-green-600" : "text-red-600"}`}>
             {emailResponse}

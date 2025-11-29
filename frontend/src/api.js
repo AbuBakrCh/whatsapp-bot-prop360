@@ -107,3 +107,23 @@ export async function sendActivityEmails(merchantId, date) {
     throw err;
   }
 }
+
+export async function getPrompt(promptId) {
+  try {
+    const response = await axios.get(`${BASE}/utilities/prompts/get`, { params: { prompt_id: promptId } });
+    return response.data;
+  } catch (err) {
+    console.error("Error fetching prompt:", err);
+    throw err;
+  }
+}
+
+export async function savePrompt(promptId, promptText) {
+  try {
+    const response = await axios.post(`${BASE}/utilities/prompts/save`, { prompt_id: promptId, prompt_text: promptText });
+    return response.data;
+  } catch (err) {
+    console.error("Error saving prompt:", err);
+    throw err;
+  }
+}

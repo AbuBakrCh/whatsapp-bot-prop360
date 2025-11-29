@@ -343,7 +343,7 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -1317,6 +1317,51 @@ async def send_activity_emails(merchantId: str = Body(...), date: str = Body(...
             sent_count += 1
 
         return {"processed": results, "sent_count": sent_count}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+# Save a prompt
+@fastapi_app.post("/utilities/prompts/save")
+async def save_prompt(prompt_id: str = Body(...), prompt_text: str = Body(...)):
+    """
+    Save a prompt with a unique identifier.
+    - prompt_id: a string identifier for the prompt (e.g., "client_message_form")
+    - prompt_text: the actual text of the prompt
+    """
+    try:
+        # Upsert: insert new or update existing
+        result = await db.prompts.update_one(
+            {"prompt_id": prompt_id},
+            {"$set": {
+                "prompt_text": prompt_text,
+                "updated_at": datetime.utcnow()
+            }},
+            upsert=True
+        )
+
+        return {"success": True, "matched_count": result.matched_count, "modified_count": result.modified_count}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+# Fetch a prompt
+@fastapi_app.get("/utilities/prompts/get")
+async def get_prompt(prompt_id: str):
+    """
+    Fetch a saved prompt by its identifier.
+    - prompt_id: string identifier of the prompt
+    """
+    try:
+        doc = await db.prompts.find_one({"prompt_id": prompt_id})
+        if not doc:
+            return {"error": "Prompt not found"}
+
+        return {"prompt_id": doc["prompt_id"], "prompt_text": doc["prompt_text"], "updated_at": doc.get("updated_at")}
 
     except Exception as e:
         traceback.print_exc()
