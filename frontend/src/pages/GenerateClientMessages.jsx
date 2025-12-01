@@ -85,7 +85,7 @@ export default function GenerateClientMessages() {
       if (data.error) {
         setEmailResponse(data.error);
       } else {
-        setEmailResponse(`${data.sent_count} emails processed successfully.`);
+        setEmailResponse(`${data.sent_count} emails processed successfully for ${data.documents_count} activity documents.`);
         console.log("Send emails results:", data.processed);
       }
     } catch (err) {

@@ -343,7 +343,7 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
-#embeddings, texts = build_index(df)
+embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -1099,14 +1099,12 @@ async def get_duplicate_fields():
 
     return {"duplicates": results}
 
-
 @fastapi_app.post("/utilities/activity/client-messages")
-async def activity_client_messages(date: str = Body(...), prompt: str = Body(...), merchantId: str = Body(...)):
-    """
-    Generate client message using OpenAI for formdatas after a given date.
-    - date: YYYY-MM-DD
-    - prompt: string to guide OpenAI completion
-    """
+async def activity_client_messages(
+    date: str = Body(...),
+    prompt: str = Body(...),
+    merchantId: str = Body(...)
+):
     try:
         query_date = datetime.fromisoformat(date.replace("Z", "+00:00"))
         pipeline = [
@@ -1142,8 +1140,6 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
             {
                 "$project": {
                     "_id": 1,
-                    "client": "$data.field-1760213170764-fhjgcg5u0",
-                    "property": "$data.field-1760213192233-byk1fbajy",
                     "activityDescription": "$data.field-1760213212062-ask5v2fuy"
                 }
             }
@@ -1151,26 +1147,47 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
 
         cursor = prop_db.formdatas.aggregate(pipeline)
         results = []
-        async for doc in cursor:
-            # Compose OpenAI prompt
-            openai_prompt = f"{prompt}\n\nClient: {doc.get('client')}\nProperty: {doc.get('property')}\nActivity: {doc.get('activityDescription')}"
-            generated_text = generate_text_with_model(openai_prompt, model_name="gpt-4o", temperature=0.3)
 
-            # Update MongoDB document
+        async for doc in cursor:
+
+            # AI receives placeholders instead of real data
+            openai_prompt = (
+                "MAIN INSTRUCTIONS:\n"
+                f"{prompt}\n\n"
+
+                "WORK DONE RELATED TO PROPERTY:\n"
+                f"{doc.get('activityDescription')}\n\n"
+
+                "PLACEHOLDER RULES (VERY IMPORTANT):\n"
+                "- Use {{client_name}} as the placeholder for the client's name.\n"
+                "- Use {{property_name}} as the placeholder for the property's name.\n"
+                "- Do NOT replace these placeholders; keep them exactly as {{client_name}} and {{property_name}}.\n"
+                "- Mention {{client_name}} when referring to the client.\n"
+                "- Mention {{property_name}} when referring to the property.\n\n"
+
+                "STYLE & OUTPUT REQUIREMENTS:\n"
+                "- Follow all formatting and writing requirements from MAIN INSTRUCTIONS above.\n"
+                "- The message should look exactly like it is written by Kosta Arslanoğlu but grammatically correct and coherent.\n"
+                "- The message must be formal, polite, simple, and professional.\n"
+            )
+
+            generated_text = generate_text_with_model(
+                openai_prompt,
+                model_name="gpt-4o",
+                temperature=0.3
+            )
+
+            # update DB
             await prop_db.formdatas.update_one(
                 {"_id": ObjectId(doc["_id"])},
-                {"$set":
-                    {
+                {"$set": {
                     "data.field-1762159054336-n6b4ihv37": generated_text,
                     "data.field-1763667758197-dg5h28foy": "Ready to Review"
-                    }
-                }
+                }}
             )
 
             results.append({
                 "id": str(doc["_id"]),
-                "client": doc.get("client"),
-                "property": doc.get("property"),
                 "activityDescription": doc.get("activityDescription"),
                 "generatedMessage": generated_text
             })
@@ -1185,21 +1202,18 @@ async def activity_client_messages(date: str = Body(...), prompt: str = Body(...
 async def send_activity_emails(merchantId: str = Body(...), date: str = Body(...)):
     """
     Send activity update emails to clients whose records are marked 'Ready to Send'.
-    Steps:
-    - Filter records by indicator 'custom-wyey07pb7' and status 'Ready to Send'
-    - Extract client field and parse PID (value after the pipe)
-    - Query the same collection for PID to retrieve the client's email
-    - Send the email (email-sending code will be added)
+    Now handles multiple client/property pairs in a single document.
+    Substitutes {{client_name}} and {{property_name}} placeholders in email message.
     """
     try:
         query_date = datetime.fromisoformat(date.replace("Z", "+00:00"))
-        # Step 1: Fetch all formdatas where status is "Ready to Send"
+
         pipeline = [
             {
                 "$match": {
                     "$or": [
-                        { "merchantId": merchantId },
-                        { "sharedWithMerchants": merchantId }
+                        {"merchantId": merchantId},
+                        {"sharedWithMerchants": merchantId}
                     ],
                     "indicator": "custom-wyey07pb7",
                     "data.field-1763667758197-dg5h28foy": "Ready to Send"
@@ -1208,7 +1222,9 @@ async def send_activity_emails(merchantId: str = Body(...), date: str = Body(...
             {
                 "$addFields": {
                     "parsedDate": {
-                        "$dateFromString": {"dateString": "$data.field-1760213127501-vd61epis6"}
+                        "$dateFromString": {
+                            "dateString": "$data.field-1760213127501-vd61epis6"
+                        }
                     }
                 }
             },
@@ -1220,103 +1236,111 @@ async def send_activity_emails(merchantId: str = Body(...), date: str = Body(...
             {
                 "$project": {
                     "_id": 1,
-                    "clientRaw": "$data.field-1760213170764-fhjgcg5u0",
-                    "emailMessage": "$data.field-1762159054336-n6b4ihv37"
+                    "emailMessage": "$data.field-1762159054336-n6b4ihv37",
+
+                    # All client/property pairs
+                    "client1": "$data.field-1760213170764-fhjgcg5u0",
+                    "property1": "$data.field-1760213192233-byk1fbajy",
+                    "client2": "$data.field-1762112354057-0rwwvsbo0",
+                    "property2": "$data.field-1762112936496-lcg46gwiy",
+                    "client3": "$data.field-1762112414711-wp3hdmt1n",
+                    "property3": "$data.field-1762112987608-45lv27qbc",
+                    "client4": "$data.field-1764147273289-bqudbub97",
+                    "property4": "$data.field-1764147281268-oqtfditkd",
+                    "client5": "$data.field-1764147276663-da6q4ymmr",
+                    "property5": "$data.field-1764147283488-svx61v7j3",
+                    "client6": "$data.field-1764147278883-5oxys6rmc",
+                    "property6": "$data.field-1764147285842-qbxk0iz1e",
                 }
             }
         ]
 
         cursor = prop_db.formdatas.aggregate(pipeline)
-        sent_count = 0
         results = []
+        documents_count = 0
+        sent_count = 0
 
         async for doc in cursor:
-            client_raw = doc.get("clientRaw", "")
-            email_message = doc.get("emailMessage")
-            if not client_raw or "|" not in client_raw or not email_message:
+            email_message_template = doc.get("emailMessage")
+            if not email_message_template:
                 results.append({
                     "id": str(doc["_id"]),
-                    "status": "Skipped: invalid client format or missing email content",
-                    "clientRaw": client_raw,
-                    "emailMessagePresent": bool(email_message)
+                    "status": "Skipped: missing email content"
                 })
                 continue
 
-            # Extract PID
-            pid = client_raw.split("|")[-1].strip()
-            if not pid:
-                results.append({
-                    "id": str(doc["_id"]),
-                    "status": "Empty pid after parsing",
-                    "clientRaw": client_raw
-                })
-                continue
+            email_sent_for_doc = False
 
-            try:
-                pid_float = float(pid)
-            except ValueError:
-                results.append({
-                    "id": str(doc["_id"]),
-                    "status": f"PID '{pid}' is not a valid number",
-                    "clientRaw": client_raw
-                })
-                continue
+            # Iterate over all client/property pairs
+            for i in range(1, 7):
+                client_name = doc.get(f"client{i}")
+                property_name = doc.get(f"property{i}")
+                pid = None
 
-            # Step 2: Search same collection for matching PID to get email
-            contact_doc = await prop_db.formdatas.find_one(
-                {
-                    "pid": pid_float
-                }
-            )
+                if not client_name or not property_name:
+                    continue
 
-            if not contact_doc:
-                results.append({
-                    "id": str(doc["_id"]),
-                    "status": "No contact record found",
-                    "pid": pid_float
-                })
-                continue
+                # Extract PID if exists
+                if "|" in client_name:
+                    pid = client_name.split("|")[-1].strip()
 
-            emailAddr = contact_doc.get("data", {}).get("field-1741774690043-v7jylsjj2")
+                if not pid:
+                    continue
 
-            if not emailAddr:
-                results.append({
-                    "id": str(doc["_id"]),
-                    "pid": pid,
-                    "status": "Email field missing for contact",
-                    "availableFields": list(contact_doc.get("data", {}).keys())
-                })
-                continue
+                try:
+                    pid_float = float(pid)
+                    contact_doc = await prop_db.formdatas.find_one({"pid": pid_float})
+                    emailAddr = contact_doc.get("data", {}).get("field-1741774690043-v7jylsjj2")
+                except Exception:
+                    emailAddr = None
 
-            # --- Step 3: Send email (you will paste your code here) ---
-            # send_email(to=email, body=email_message)
-            try:
-                send_email(to=emailAddr, subject="Activity update for Your Property", body=email_message)
-            except Exception as e:
+                if not emailAddr:
+                    emailAddr = "ka@investgreece.gr"
+
+                client_display_name = client_name.split("|")[0].strip()
+                property_display_name = property_name.split("|")[0].strip()
+
+                # Substitute placeholders
+                email_text = email_message_template.replace("{{client_name}}", client_display_name)
+                email_text = email_text.replace("{{property_name}}", property_display_name)
+
+                # Send email
+                try:
+                    send_email(
+                        to=emailAddr,
+                        subject="Activity update for Your Property",
+                        body=email_text
+                    )
+                    email_sent_for_doc = True
+                    sent_count += 1
+                except Exception as e:
+                    results.append({
+                        "id": str(doc["_id"]),
+                        "email": emailAddr,
+                        "client": client_name,
+                        "property": property_name,
+                        "status": f"Failed to send email: {e}"
+                    })
+                    continue
+
                 results.append({
                     "id": str(doc["_id"]),
                     "email": emailAddr,
-                    "pid": pid,
-                    "status": f"Failed to send email: {e}"
+                    "client": client_name,
+                    "property": property_name,
+                    "status": "Email sent",
+                    "messagePreview": email_text[:120]
                 })
-                continue
 
-            # Step 4: Update status to "Sent"
-            await prop_db.formdatas.update_one(
-                {"_id": ObjectId(doc["_id"])},
-                {"$set": {"data.field-1763667758197-dg5h28foy": "Sent"}}
-            )
+            # Step 5: Update status once per document
+            if email_sent_for_doc:
+                await prop_db.formdatas.update_one(
+                    {"_id": ObjectId(doc["_id"])},
+                    {"$set": {"data.field-1763667758197-dg5h28foy": "Sent"}}
+                )
+                documents_count += 1
 
-            results.append({
-                "id": str(doc["_id"]),
-                "email": emailAddr,
-                "pid": pid,
-                "status": "Email sent",
-                "messagePreview": email_message[:120] if email_message else None
-            })
-            sent_count += 1
-
-        return {"processed": results, "sent_count": sent_count}
+        return {"processed": results, "sent_count": sent_count, "documents_count": documents_count}
 
     except Exception as e:
         traceback.print_exc()
