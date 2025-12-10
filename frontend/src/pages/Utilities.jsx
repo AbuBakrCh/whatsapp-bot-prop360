@@ -4,6 +4,7 @@ import SendBulkEmail from "./SendBulkEmail"; // use your correct component name
 import ProcessBankStatementsDrive from "./ProcessBankStatementsDrive";
 import ShowDuplicates from "./ShowDuplicates";
 import GenerateClientMessages from "./GenerateClientMessages"
+import AddProperties from "./AddProperties"
 
 export default function Utilities() {
   return (
@@ -25,6 +26,7 @@ export default function Utilities() {
         <ProcessBankStatementsDrive />
         <ShowDuplicates />
         <GenerateClientMessages />
+        <AddProperties />
       </div>
     </div>
   );

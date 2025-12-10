@@ -127,3 +127,13 @@ export async function savePrompt(promptId, promptText) {
     throw err;
   }
 }
+
+export async function addProperties(payload) {
+  try {
+    const response = await axios.post(`${BASE}/properties/add`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error adding properties:", err);
+    throw err;
+  }
+}

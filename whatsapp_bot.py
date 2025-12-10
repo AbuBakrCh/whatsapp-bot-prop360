@@ -1391,6 +1391,120 @@ async def get_prompt(prompt_id: str):
         traceback.print_exc()
         return {"error": str(e)}
 
+
+@fastapi_app.post("/properties/add")
+async def add_properties(payload: dict):
+    """
+    Add shared merchant access to properties.
+
+    Steps:
+    - Get source merchant by email → get merchantId
+    - Get all target merchants by email → extract their merchantIds
+    - Filter properties where:
+        merchantId = source merchantId
+        city = given city
+        division = given division
+        isPublic = published toggle
+    - Add target merchantIds into `sharedWithMerchants`
+    """
+    try:
+        source_email = payload.get("sourceMerchantEmail")
+        target_emails = payload.get("targetMerchantEmails", [])
+        filters = payload.get("filters", {})
+
+        city = filters.get("city")
+        division = filters.get("division")
+        published = filters.get("published")
+
+        if not source_email or not target_emails:
+            return {"error": "Source merchant email and target merchant emails are required."}
+
+        users_col = prop_db.users
+
+        # -------------------------------------
+        # Fetch source merchant
+        # -------------------------------------
+        source_merchant = await users_col.find_one({"email": source_email})
+
+        if not source_merchant:
+            return {"error": "Source merchant not found."}
+
+        source_merchant_id = source_merchant.get("merchantId")
+        if not source_merchant_id:
+            return {"error": "Source merchant does not have merchantId."}
+
+        # -------------------------------------
+        # Fetch target merchants
+        # -------------------------------------
+        target_cursor = users_col.find({"email": {"$in": target_emails}})
+        target_merchants = await target_cursor.to_list(length=None)
+
+        if not target_merchants:
+            return {"error": "No target merchants found for provided emails."}
+
+        target_merchant_ids = [
+            m.get("merchantId")
+            for m in target_merchants
+            if m.get("merchantId")
+        ]
+
+        if not target_merchant_ids:
+            return {"error": "Target merchants do not have merchantId fields."}
+
+        # -------------------------------------
+        # Build property filter
+        # -------------------------------------
+        prop_filter = {"merchantId": source_merchant_id}
+
+        if city:
+            prop_filter["data.field-1744021694415-n0vk8fy4r"] = city
+
+        if division:
+            prop_filter["data.field-1756930628075-gz12s60tm"] = division
+
+        if published is not None:
+            prop_filter["isPublic"] = bool(published)
+
+        prop_filter["indicator"] = "properties"
+        properties_col = prop_db.formdatas
+
+        # -------------------------------------
+        # Query properties to update
+        # -------------------------------------
+        props_cursor = properties_col.find(prop_filter)
+        properties = await props_cursor.to_list(length=None)
+
+        if not properties:
+            return {
+                "message": "No properties matched the given filters.",
+                "updated": 0
+            }
+
+        # -------------------------------------
+        # Update properties (add merchant IDs)
+        # -------------------------------------
+        result = await properties_col.update_many(
+            prop_filter,
+            {
+                "$addToSet": {
+                    "sharedWithMerchants": {"$each": target_merchant_ids}
+                }
+            }
+        )
+
+        return {
+            "message": "Properties updated successfully.",
+            "updated": result.modified_count,
+            "sourceMerchantId": source_merchant_id,
+            "targetMerchantIds": target_merchant_ids,
+            "filtersApplied": prop_filter
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
 def send_email(to: str, subject: str, body: str):
     """
     Send an email via Gmail SMTP.
