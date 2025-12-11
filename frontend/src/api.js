@@ -137,3 +137,13 @@ export async function addProperties(payload) {
     throw err;
   }
 }
+
+export async function addContacts(payload) {
+  try {
+    const response = await axios.post(`${BASE}/contacts/add`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error adding contacts:", err);
+    throw err;
+  }
+}

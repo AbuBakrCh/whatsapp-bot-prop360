@@ -5,6 +5,7 @@ import ProcessBankStatementsDrive from "./ProcessBankStatementsDrive";
 import ShowDuplicates from "./ShowDuplicates";
 import GenerateClientMessages from "./GenerateClientMessages"
 import AddProperties from "./AddProperties"
+import AddContacts from "./AddContacts"
 
 export default function Utilities() {
   return (
@@ -27,6 +28,7 @@ export default function Utilities() {
         <ShowDuplicates />
         <GenerateClientMessages />
         <AddProperties />
+        <AddContacts />
       </div>
     </div>
   );
