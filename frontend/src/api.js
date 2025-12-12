@@ -138,12 +138,32 @@ export async function addProperties(payload) {
   }
 }
 
+export async function deleteProperties(payload) {
+  try {
+    const response = await axios.post(`${BASE}/properties/delete`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error deleting properties:", err);
+    throw err;
+  }
+}
+
 export async function addContacts(payload) {
   try {
     const response = await axios.post(`${BASE}/contacts/add`, payload);
     return response.data;
   } catch (err) {
     console.error("Error adding contacts:", err);
+    throw err;
+  }
+}
+
+export async function deleteContacts(payload) {
+  try {
+    const response = await axios.post(`${BASE}/contacts/delete`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error deleting contacts:", err);
     throw err;
   }
 }

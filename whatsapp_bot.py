@@ -1504,6 +1504,120 @@ async def add_properties(payload: dict):
         traceback.print_exc()
         return {"error": str(e)}
 
+
+@fastapi_app.post("/properties/delete")
+async def delete_properties(payload: dict):
+    """
+    Remove shared merchant access from properties.
+
+    Steps:
+    - Get source merchant by email → get merchantId
+    - Get all target merchants by email → extract their merchantIds
+    - Filter properties where:
+        merchantId = source merchantId
+        city = given city
+        division = given division
+        isPublic = published toggle
+    - Remove target merchantIds from `sharedWithMerchants`
+    """
+    try:
+        source_email = payload.get("sourceMerchantEmail")
+        target_emails = payload.get("targetMerchantEmails", [])
+        filters = payload.get("filters", {})
+
+        city = filters.get("city")
+        division = filters.get("division")
+        published = filters.get("published")
+
+        if not source_email or not target_emails:
+            return {"error": "Source merchant email and target merchant emails are required."}
+
+        users_col = prop_db.users
+
+        # -------------------------------------
+        # Fetch source merchant
+        # -------------------------------------
+        source_merchant = await users_col.find_one({"email": source_email})
+
+        if not source_merchant:
+            return {"error": "Source merchant not found."}
+
+        source_merchant_id = source_merchant.get("merchantId")
+        if not source_merchant_id:
+            return {"error": "Source merchant does not have merchantId."}
+
+        # -------------------------------------
+        # Fetch target merchants
+        # -------------------------------------
+        target_cursor = users_col.find({"email": {"$in": target_emails}})
+        target_merchants = await target_cursor.to_list(length=None)
+
+        if not target_merchants:
+            return {"error": "No target merchants found for provided emails."}
+
+        target_merchant_ids = [
+            m.get("merchantId")
+            for m in target_merchants
+            if m.get("merchantId")
+        ]
+
+        if not target_merchant_ids:
+            return {"error": "Target merchants do not have merchantId fields."}
+
+        # -------------------------------------
+        # Build property filter
+        # -------------------------------------
+        prop_filter = {"merchantId": source_merchant_id}
+
+        if city:
+            prop_filter["data.field-1744021694415-n0vk8fy4r"] = city
+
+        if division:
+            prop_filter["data.field-1756930628075-gz12s60tm"] = division
+
+        if published is not None:
+            prop_filter["isPublic"] = bool(published)
+
+        prop_filter["indicator"] = "properties"
+
+        properties_col = prop_db.formdatas
+
+        # -------------------------------------
+        # Query properties to update
+        # -------------------------------------
+        props_cursor = properties_col.find(prop_filter)
+        properties = await props_cursor.to_list(length=None)
+
+        if not properties:
+            return {
+                "message": "No properties matched the given filters.",
+                "updated": 0
+            }
+
+        # -------------------------------------
+        # Update properties (remove merchant IDs)
+        # -------------------------------------
+        result = await properties_col.update_many(
+            prop_filter,
+            {
+                "$pull": {
+                    "sharedWithMerchants": {"$in": target_merchant_ids}
+                }
+            }
+        )
+
+        return {
+            "message": "Properties updated successfully (deleted access).",
+            "updated": result.modified_count,
+            "sourceMerchantId": source_merchant_id,
+            "removedMerchantIds": target_merchant_ids,
+            "filtersApplied": prop_filter
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
 @fastapi_app.post("/contacts/add")
 async def add_contacts(payload: dict):
     """
@@ -1616,6 +1730,125 @@ async def add_contacts(payload: dict):
             "updated": result.modified_count,
             "sourceMerchantId": source_merchant_id,
             "targetMerchantIds": target_merchant_ids,
+            "filtersApplied": contacts_filter
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+@fastapi_app.post("/contacts/delete")
+async def delete_contacts(payload: dict):
+    """
+    Remove shared merchant access from contacts.
+
+    Steps:
+    - Get source merchant by email → merchantId
+    - Get target merchants by email → merchantIds
+    - Filter contacts where:
+        indicator = "contacts"
+        merchantId = source merchantId
+        searchForProperty = toggle
+        doesHeHaveProperty = toggle
+    - Remove target merchantIds from sharedWithMerchants
+    """
+    try:
+        source_email = payload.get("sourceMerchantEmail")
+        target_emails = payload.get("targetMerchantEmails", [])
+        filters = payload.get("filters", {})
+
+        search_for_property = filters.get("searchForProperty")
+        does_he_have_property = filters.get("doesHeHaveProperty")
+
+        if not source_email or not target_emails:
+            return {"error": "Source merchant email and target merchant emails are required."}
+
+        users_col = prop_db.users
+
+        # -------------------------------------
+        # Fetch source merchant
+        # -------------------------------------
+        source_merchant = await users_col.find_one({"email": source_email})
+
+        if not source_merchant:
+            return {"error": "Source merchant not found."}
+
+        source_merchant_id = source_merchant.get("merchantId")
+        if not source_merchant_id:
+            return {"error": "Source merchant does not have merchantId."}
+
+        # -------------------------------------
+        # Fetch target merchants
+        # -------------------------------------
+        target_cursor = users_col.find({"email": {"$in": target_emails}})
+        target_merchants = await target_cursor.to_list(length=None)
+
+        if not target_merchants:
+            return {"error": "No target merchants found for provided emails."}
+
+        target_merchant_ids = [
+            m.get("merchantId") for m in target_merchants if m.get("merchantId")
+        ]
+
+        if not target_merchant_ids:
+            return {"error": "Target merchants do not have merchantId fields."}
+
+        # -------------------------------------
+        # Build contacts filter
+        # -------------------------------------
+        contacts_filter = {
+            "indicator": "contacts",
+            "merchantId": source_merchant_id
+        }
+
+        # Optional boolean toggles
+        if search_for_property is not None and search_for_property is True:
+            contacts_filter["data.field-1763539699080-ku2jwh8je"] = "Yes"
+        else:
+            contacts_filter["$or"] = [
+                {"data.field-1763539699080-ku2jwh8je": {"$exists": False}},
+                {"data.field-1763539699080-ku2jwh8je": "No"}
+            ]
+
+        if does_he_have_property is not None and does_he_have_property is True:
+            contacts_filter["data.field-1760945578087-1d922hj0e"] = "Yes"
+        else:
+            contacts_filter["$or"] = [
+                {"data.field-1760945578087-1d922hj0e": {"$exists": False}},
+                {"data.field-1760945578087-1d922hj0e": "No"}
+            ]
+
+        contacts_col = prop_db.formdatas
+
+        # -------------------------------------
+        # Query contacts to update
+        # -------------------------------------
+        contacts_cursor = contacts_col.find(contacts_filter)
+        contacts = await contacts_cursor.to_list(length=None)
+
+        if not contacts:
+            return {
+                "message": "No contacts matched the given filters.",
+                "updated": 0
+            }
+
+        # -------------------------------------
+        # Remove merchant IDs
+        # -------------------------------------
+        result = await contacts_col.update_many(
+            contacts_filter,
+            {
+                "$pull": {
+                    "sharedWithMerchants": {"$in": target_merchant_ids}
+                }
+            }
+        )
+
+        return {
+            "message": "Contacts updated successfully (deleted access).",
+            "updated": result.modified_count,
+            "sourceMerchantId": source_merchant_id,
+            "targetMerchantIdsRemoved": target_merchant_ids,
             "filtersApplied": contacts_filter
         }
 

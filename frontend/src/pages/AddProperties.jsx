@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { addProperties } from "../api";
+import { addProperties, deleteProperties } from "../api";
 
 export default function AddingProperties() {
   const [sourceMerchantEmail, setSourceMerchantEmail] = useState("");
@@ -13,7 +13,7 @@ export default function AddingProperties() {
   const [loading, setLoading] = useState(false);
   const [responseMsg, setResponseMsg] = useState("");
 
-  const handleProcess = async () => {
+  const handleProcess = async (actionType) => {
     if (!sourceMerchantEmail || !targetMerchantEmails) {
       setResponseMsg("Source Merchant Email and Target Merchant Emails are required.");
       return;
@@ -36,14 +36,21 @@ export default function AddingProperties() {
         },
       };
 
-      const res = await addProperties(payload);
+
+      let res;
+
+      if (actionType === "add") {
+        res = await addProperties(payload);
+      } else if (actionType === "delete") {
+        res = await deleteProperties(payload);
+      }
 
       if (res.error) {
-          setResponseMsg(res.error);
+        setResponseMsg(res.error);
       } else if (res.message) {
-          setResponseMsg(res.message);
+        setResponseMsg(res.message);
       } else {
-          setResponseMsg("Operation completed.");
+        setResponseMsg("Operation completed.");
       }
     } catch (err) {
       setResponseMsg(err.response?.data?.error || "Failed to process properties.");
@@ -54,7 +61,7 @@ export default function AddingProperties() {
 
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Adding Properties</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Manage Properties</h2>
 
       {/* Main Inputs */}
       <div className="flex flex-col gap-4 mb-6">
@@ -104,22 +111,36 @@ export default function AddingProperties() {
         </label>
       </div>
 
-      {/* Process Button */}
-      <button
-        onClick={handleProcess}
-        disabled={loading}
-        className={`w-full px-4 py-2 rounded-md text-white font-medium transition ${
-          loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-        }`}
-      >
-        {loading ? "Processing..." : "Process"}
-      </button>
+      {/* Buttons */}
+      <div className="flex gap-4">
+        <button
+          onClick={() => handleProcess("add")}
+          disabled={loading}
+          className={`w-1/2 px-4 py-2 rounded-md text-white font-medium transition ${
+            loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
+          }`}
+        >
+          {loading ? "Processing..." : "Add Property"}
+        </button>
+
+        <button
+          onClick={() => handleProcess("delete")}
+          disabled={loading}
+          className={`w-1/2 px-4 py-2 rounded-md text-white font-medium transition ${
+            loading ? "bg-red-300 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+          }`}
+        >
+          {loading ? "Processing..." : "Delete Property"}
+        </button>
+      </div>
 
       {/* Response Message */}
       {responseMsg && (
         <p
           className={`mt-4 ${
-            responseMsg.includes("success") ? "text-green-600" : "text-red-600"
+            responseMsg.toLowerCase().includes("success")
+              ? "text-green-600"
+              : "text-red-600"
           }`}
         >
           {responseMsg}
