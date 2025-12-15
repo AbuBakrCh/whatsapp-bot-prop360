@@ -14,7 +14,7 @@ from PIL import Image
 import io
 from collections import defaultdict
 from bson import ObjectId
-
+from transfer_ownership import start_scheduler, transfer_ownership
 
 import google.generativeai as genai
 import httpx
@@ -615,6 +615,8 @@ async def receive(request: Request):
 @fastapi_app.on_event("startup")
 async def ensure_indexes():
     await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
+    await transfer_ownership(prop_db)
+    start_scheduler(prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
