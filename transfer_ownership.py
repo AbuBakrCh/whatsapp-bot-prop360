@@ -65,6 +65,19 @@ async def transfer_ownership(prop_db):
     update_pipeline = [
         {
             "$set": {
+                "metadata.previousOwner": {
+                    "$ifNull": ["$metadata.previousOwner", "$owner"]
+                },
+                "metadata.previousMerchantId": {
+                    "$ifNull": ["$metadata.previousMerchantId", "$merchantId"]
+                },
+                "metadata.ownershipTransferredAt": {
+                    "$ifNull": ["$metadata.ownershipTransferredAt", "$$NOW"]
+                }
+            }
+        },
+        {
+            "$set": {
                 "sharedWithMerchants": {
                     "$setUnion": [
                         {"$ifNull": ["$sharedWithMerchants", []]},
