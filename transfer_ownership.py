@@ -31,6 +31,9 @@ def _get_cutoff_date() -> datetime:
     # Expecting ISO format: 2025-12-15T00:00:00Z
     return datetime.fromisoformat(cutoff_str.replace("Z", "+00:00"))
 
+def _is_job_enabled() -> bool:
+    return os.getenv("TRANSFER_OWNERSHIP_ENABLED", "true").lower() == "true"
+
 async def transfer_ownership(prop_db):
     """
     Task: transfer_ownership
@@ -40,6 +43,10 @@ async def transfer_ownership(prop_db):
     - Sets new merchantId
     - Duplicate executions are safe
     """
+    if not _is_job_enabled():
+        logger.info("transfer_ownership is disabled. Skipping execution.")
+        return {"skipped": True}
+
     logger.info("Starting transfer_ownership task")
 
     NEW_OWNER_ID = os.getenv("TRANSFER_NEW_OWNER_ID")
