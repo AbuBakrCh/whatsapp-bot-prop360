@@ -68,6 +68,7 @@ async def transfer_ownership(prop_db):
     )
 
     formdatas_col = prop_db.formdatas
+    users_col = prop_db.users
 
     update_pipeline = [
         {
@@ -119,9 +120,73 @@ async def transfer_ownership(prop_db):
         result.modified_count,
     )
 
+
+    # --------------------------------------------------
+    # Step 2: Custom text prefix for custom-wyey07pb7
+    # --------------------------------------------------
+
+    logger.info("Processing custom-wyey07pb7 text updates")
+    cursor = formdatas_col.find(
+        {
+            "metadata.createdAt": {"$gt": CUTOFF_DATE},
+            "indicator": "custom-wyey07pb7",
+            "owner": NEW_OWNER_ID,
+            "merchantId": NEW_MERCHANT_ID,
+            "metadata.previousMerchantId": {"$exists": True},
+            "metadata.customPrefixAdded": {"$ne": True}
+        }
+    )
+    updated_custom_docs = 0
+
+    async for doc in cursor:
+        prev_merchant_id = doc["metadata"]["previousMerchantId"]
+
+        user = await users_col.find_one(
+            {"merchantId": prev_merchant_id},
+            {"displayName": 1, "email": 1}
+        )
+
+        if not user:
+            logger.warning(
+                "Previous merchant user not found | merchantId=%s",
+                prev_merchant_id
+            )
+            continue
+
+        name = user.get("displayName", "Unknown")
+        email = user.get("email", "unknown@email")
+
+        prefix = f"{name} ({email}) wrote:\n\n"
+
+        old_text = (
+            doc.get("data", {})
+            .get("field-1760213212062-ask5v2fuy", "")
+        )
+
+        if old_text.startswith(prefix):
+            continue
+
+        await formdatas_col.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "data.field-1760213212062-ask5v2fuy": prefix + old_text,
+                    "metadata.customPrefixAdded": True
+                }
+            }
+        )
+
+        updated_custom_docs += 1
+
+    logger.info(
+        "Custom text updates completed | updated=%s",
+        updated_custom_docs
+    )
+
     return {
         "matched": result.matched_count,
-        "modified": result.modified_count
+        "modified": result.modified_count,
+        "updated_custom_docs": updated_custom_docs
     }
 
 def start_scheduler(prop_db):
