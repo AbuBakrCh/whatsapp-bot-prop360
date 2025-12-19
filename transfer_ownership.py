@@ -73,6 +73,7 @@ async def transfer_ownership(prop_db):
     update_pipeline = [
         {
             "$set": {
+                "metadata.ownershipTransferred": True,
                 "metadata.previousOwner": {
                     "$ifNull": ["$metadata.previousOwner", "$owner"]
                 },
@@ -108,8 +109,10 @@ async def transfer_ownership(prop_db):
         {
             "metadata.createdAt": {"$gt": CUTOFF_DATE},
             "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7"]},
-            "owner": {"$ne": NEW_OWNER_ID},
-            "merchantId": {"$ne": NEW_MERCHANT_ID}
+            "$or": [
+                {"metadata.ownershipTransferred": {"$exists": False}},
+                {"metadata.ownershipTransferred": False}
+            ]
         },
         update_pipeline
     )
@@ -129,27 +132,27 @@ async def transfer_ownership(prop_db):
     cursor = formdatas_col.find(
         {
             "metadata.createdAt": {"$gt": CUTOFF_DATE},
+            "metadata.ownershipTransferred": {"$eq": True},
             "indicator": "custom-wyey07pb7",
             "owner": NEW_OWNER_ID,
             "merchantId": NEW_MERCHANT_ID,
-            "metadata.previousMerchantId": {"$exists": True},
             "metadata.customPrefixAdded": {"$ne": True}
         }
     )
     updated_custom_docs = 0
 
     async for doc in cursor:
-        prev_merchant_id = doc["metadata"]["previousMerchantId"]
+        prev_owner = doc["metadata"]["previousOwner"]
 
         user = await users_col.find_one(
-            {"merchantId": prev_merchant_id},
+            {"firebaseId": prev_owner},
             {"displayName": 1, "email": 1}
         )
 
         if not user:
             logger.warning(
-                "Previous merchant user not found | merchantId=%s",
-                prev_merchant_id
+                "Previous merchant user not found | firebaseId=%s",
+                prev_owner
             )
             continue
 
