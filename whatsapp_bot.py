@@ -1111,20 +1111,17 @@ async def activity_client_messages(
         query_date = datetime.fromisoformat(date.replace("Z", "+00:00"))
         pipeline = [
             {
-                "$match": {
-                    "indicator": "custom-wyey07pb7",
-                    "$or": [
-                        {"sharedWithMerchants": merchantId},
-                        {"merchantId": merchantId}
-                    ],
-                    "$and": [
-                        {
-                            "$or": [
-                                {"data.field-1763667758197-dg5h28foy": {"$exists": False}},
-                                {"data.field-1763667758197-dg5h28foy": {"$nin": ["Sent", "Ready to Send", "Will Not Be Sent"]}}
-                            ]
+                {
+                    "$match": {
+                        "indicator": "custom-wyey07pb7",
+                        "$or": [
+                            {"sharedWithMerchants": merchantId},
+                            {"merchantId": merchantId}
+                        ],
+                        "data.field-1763667758197-dg5h28foy": {
+                            "$in": [None, "", "Ready to Review"]
                         }
-                    ]
+                    }
                 }
             },
             {
