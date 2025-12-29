@@ -167,3 +167,34 @@ export async function deleteContacts(payload) {
     throw err;
   }
 }
+
+
+export async function generateActivitySummaries(payload) {
+  const response = await axios.post(`${BASE}/forms/group-by-client-property`, payload);
+  return response.data;
+}
+
+export async function getActivitySummaryProgress(jobId) {
+  const response = await axios.get(`${BASE}/forms/activity-summary-progress/${jobId}`);
+  return response.data;
+}
+
+export async function getPropertyActivitySummaries() {
+  try {
+    const response = await axios.get(`${BASE}/property-activity-summaries`);
+    return response.data;
+  } catch (err) {
+    console.error("Error fetching property activity summaries:", err);
+    throw err;
+  }
+}
+
+export async function updateActivitySummaryStatus(summaryId, status) {
+  try {
+    const response = await axios.patch(`${BASE}/activity-summary/${summaryId}/status`, { status });
+    return response.data;
+  } catch (err) {
+    console.error("Failed to update summary status:", err);
+    return { error: err.message || "Failed to update status" };
+  }
+}

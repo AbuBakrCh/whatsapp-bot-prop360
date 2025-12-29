@@ -6,6 +6,8 @@ import ShowDuplicates from "./ShowDuplicates";
 import GenerateClientMessages from "./GenerateClientMessages"
 import AddProperties from "./AddProperties"
 import AddContacts from "./AddContacts"
+import GenerateActivitySummaries from "./GenerateActivitySummaries";
+import PropertyActivitySummaries from "./PropertyActivitySummaries"
 
 export default function Utilities() {
   return (
@@ -29,6 +31,8 @@ export default function Utilities() {
         <GenerateClientMessages />
         <AddProperties />
         <AddContacts />
+        <GenerateActivitySummaries />
+        <PropertyActivitySummaries />
       </div>
     </div>
   );

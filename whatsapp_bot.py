@@ -15,6 +15,8 @@ import io
 from collections import defaultdict
 from bson import ObjectId
 from transfer_ownership import start_scheduler, transfer_ownership
+import uuid
+from fastapi import BackgroundTasks
 
 import google.generativeai as genai
 import httpx
@@ -1854,6 +1856,198 @@ async def delete_contacts(payload: dict):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+async def process_activity_summary_job(job_id: str, start_date: str, end_date: str):
+    try:
+        forms_col = prop_db.formdatas
+        summary_col = db.property_activity_summary
+        jobs_col = db.activity_summary_jobs
+
+        # Convert dates to datetime
+        start_date = datetime.fromisoformat(start_date)
+        end_date = datetime.fromisoformat(end_date)
+
+        # Aggregation pipeline
+        pipeline = [
+            {
+                "$match": {
+                    "indicator": "custom-wyey07pb7",
+                    "metadata.createdAt": {"$gte": start_date, "$lte": end_date}
+                }
+            },
+            {
+                "$project": {
+                    "indicator": 1,
+                    "activityDescription": "$data.field-1760213212062-ask5v2fuy",
+                    "pairs": [
+                        {"client": "$data.field-1760213170764-fhjgcg5u0",
+                         "property": "$data.field-1760213192233-byk1fbajy"},
+                        {"client": "$data.field-1762112354057-0rwwvsbo0",
+                         "property": "$data.field-1762112936496-lcg46gwiy"},
+                        {"client": "$data.field-1762112414711-wp3hdmt1n",
+                         "property": "$data.field-1762112987608-45lv27qbc"},
+                        {"client": "$data.field-1764147273289-bqudbub97",
+                         "property": "$data.field-1764147281268-oqtfditkd"},
+                        {"client": "$data.field-1764147276663-da6q4ymmr",
+                         "property": "$data.field-1764147283488-svx61v7j3"},
+                        {"client": "$data.field-1764147278883-5oxys6rmc",
+                         "property": "$data.field-1764147285842-qbxk0iz1e"},
+                    ]
+                }
+            },
+            {"$unwind": "$pairs"},
+            {"$match": {"pairs.client": {"$ne": None}, "pairs.property": {"$ne": None}}},
+            {"$group": {
+                "_id": {"client": "$pairs.client", "property": "$pairs.property"},
+                "indicator": {"$first": "$indicator"},
+                "activities": {"$push": "$activityDescription"}
+            }}
+        ]
+
+        cursor = forms_col.aggregate(pipeline)
+        results = await cursor.to_list(length=None)
+
+        await jobs_col.update_one({"_id": job_id}, {"$set": {"total": len(results)}})
+
+        for res in results:
+            client = res["_id"]["client"]
+            property_ = res["_id"]["property"]
+            activities = res.get("activities", [])
+            indicator = res.get("indicator", "custom-wyey07pb7")
+
+            existing_doc = await summary_col.find_one(
+                {"clientId": client, "propertyId": property_, "indicator": indicator},
+                {"status": 1}
+            )
+            if existing_doc and existing_doc.get("status") == "ready to send":
+                await jobs_col.update_one({"_id": job_id}, {"$inc": {"processed": 1}})
+                continue
+
+            activities_text = "\n".join([str(a) for a in activities if a])
+            prompt = f""" 
+            You are an assistant summarizing activities performed for a property. 
+            Given the following list of activities, generate a clear and concise summary suitable for a property owner.
+            Focus on the main actions, outcomes, and any important notes. Keep it in 2–3 sentences. 
+            ⚠️ IMPORTANT: DO NOT translate. Keep the summary in the same language as the input activities. 
+            Do not change any names, places, or dates. 
+            Activities: {activities_text} """
+            summary_text = generate_text_with_model(prompt)
+
+            # Fetch client email
+            client_email = None
+            try:
+                if "|" in client:
+                    pid = client.split("|")[-1].strip()
+                    pid_float = float(pid)
+                    contact_doc = await forms_col.find_one({"pid": pid_float})
+                    client_email = contact_doc.get("data", {}).get("field-1741774690043-v7jylsjj2")
+            except:
+                client_email = None
+
+            # Upsert summary
+            await summary_col.update_one(
+                {"clientId": client, "propertyId": property_, "indicator": indicator},
+                {"$set": {
+                    "activities": activities,
+                    "summary": summary_text,
+                    "clientEmail": client_email,
+                    "status": "pending",
+                    "createdAt": datetime.utcnow(),
+                    "updatedAt": datetime.utcnow()
+                }},
+                upsert=True
+            )
+
+            # Increment processed count
+            await jobs_col.update_one({"_id": job_id}, {"$inc": {"processed": 1}})
+
+        # Mark job completed
+        await jobs_col.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "completed", "finishedAt": datetime.utcnow()}}
+        )
+
+    except Exception as e:
+        print("Background job error:", e)
+        await jobs_col.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "failed", "error": str(e)}}
+        )
+
+
+@fastapi_app.post("/forms/group-by-client-property")
+async def group_forms_by_client_property(payload: dict, background_tasks: BackgroundTasks):
+    """
+    Start a background job for generating property activity summaries.
+    Returns immediately with jobId.
+    """
+    try:
+        start_date = payload.get("startDate")
+        end_date = payload.get("endDate")
+
+        if not start_date or not end_date:
+            return {"error": "startDate and endDate are required"}
+
+        jobs_col = db.activity_summary_jobs
+
+        # Insert job doc with status running
+        job_id = str(uuid.uuid4())
+        await jobs_col.insert_one({
+            "_id": job_id,
+            "total": 0,
+            "processed": 0,
+            "status": "running",
+            "startedAt": datetime.utcnow(),
+            "finishedAt": None
+        })
+
+        # Add background task
+        background_tasks.add_task(process_activity_summary_job, job_id, start_date, end_date)
+
+        return {"jobId": job_id}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+@fastapi_app.get("/forms/activity-summary-progress/{job_id}")
+async def get_activity_summary_progress(job_id: str):
+    try:
+        progress_doc = await db.activity_summary_jobs.find_one({"_id": job_id})
+        if not progress_doc:
+            return {"error": "Job not found"}
+        return progress_doc
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+@fastapi_app.get("/property-activity-summaries")
+async def get_property_activity_summaries():
+    try:
+        summary_col = db.property_activity_summary
+        cursor = summary_col.find({}).sort("createdAt", -1).limit(50)  # latest 50
+        results = await cursor.to_list(length=None)
+
+        # Optionally, convert ObjectId to string for JSON serialization
+        for doc in results:
+            doc["_id"] = str(doc["_id"])
+
+        return {
+            "count": len(results),
+            "data": results
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+@fastapi_app.patch("/activity-summary/{summary_id}/status")
+async def update_activity_summary_status(summary_id: str, payload: dict):
+    new_status = payload.get("status")
+    await db.property_activity_summary.update_one(
+        {"_id": ObjectId(summary_id)},
+        {"$set": {"status": new_status, "updatedAt": datetime.utcnow()}}
+    )
+    return {"success": True}
 
 
 def send_email(to: str, subject: str, body: str):
