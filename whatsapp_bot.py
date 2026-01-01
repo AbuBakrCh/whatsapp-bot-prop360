@@ -1103,6 +1103,134 @@ async def get_duplicate_fields():
 
     return {"duplicates": results}
 
+@fastapi_app.get("/utilities/duplicates-v2")
+async def get_duplicate_fields_v2():
+    """
+    Returns duplicate values for name, phone, email
+    along with full contact info:
+    - contactUrl
+    - createdAt
+    - ownerName
+    - ownerEmail
+    """
+
+    pipeline = [
+        # 1️⃣ Filter contacts for merchant
+        {
+            "$match": {
+                "indicator": "contacts",
+                "merchantId": "34137234-52fe-430c-a97d-df3e16525e71"
+            }
+        },
+
+        # 2️⃣ Extract needed fields
+        {
+            "$project": {
+                "_id": 1,
+                "name": "$data.field-1741774547654-ngd30kdcz",
+                "phone": "$data.field-1741778098761-w10f6zg6y",
+                "email": "$data.field-1741774690043-v7jylsjj2",
+                "createdAt": "$metadata.createdAt",
+                "createdBy": "$metadata.createdBy"
+            }
+        },
+
+        # 3️⃣ Normalize fields (name / phone / email)
+        {
+            "$project": {
+                "fields": [
+                    {"k": "name", "v": "$name"},
+                    {"k": "phone", "v": "$phone"},
+                    {"k": "email", "v": "$email"}
+                ],
+                "contactId": "$_id",
+                "createdAt": 1,
+                "createdBy": 1
+            }
+        },
+
+        # 4️⃣ Unwind each field
+        {"$unwind": "$fields"},
+
+        # 5️⃣ Ignore null values
+        {
+            "$match": {
+                "fields.v": {"$ne": None}
+            }
+        },
+
+        # 6️⃣ Join users collection (creator info)
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "createdBy",
+                "foreignField": "firebaseId",
+                "as": "creator"
+            }
+        },
+        {
+            "$unwind": {
+                "path": "$creator",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+
+        # 7️⃣ Group duplicates
+        {
+            "$group": {
+                "_id": {
+                    "field": "$fields.k",
+                    "value": "$fields.v"
+                },
+                "contacts": {
+                    "$push": {
+                        "contactId": "$contactId",
+                        "createdAt": "$createdAt",
+                        "ownerName": "$creator.displayName",
+                        "ownerEmail": "$creator.email"
+                    }
+                },
+                "count": {"$sum": 1}
+            }
+        },
+
+        # 8️⃣ Only duplicates
+        {
+            "$match": {
+                "count": {"$gt": 1}
+            }
+        },
+
+        # 9️⃣ Sort for readability
+        {
+            "$sort": {
+                "_id.field": 1,
+                "count": -1
+            }
+        }
+    ]
+
+    cursor = prop_db.formdatas.aggregate(pipeline)
+    results = []
+
+    async for doc in cursor:
+        results.append({
+            "field": doc["_id"]["field"],
+            "value": doc["_id"]["value"],
+            "count": doc["count"],
+            "contacts": [
+                {
+                    "contactUrl": f"https://prop360.pro/dashboard/forms/contacts/{str(c['contactId'])}",
+                    "createdAt": c["createdAt"],
+                    "ownerName": c.get("ownerName"),
+                    "ownerEmail": c.get("ownerEmail")
+                }
+                for c in doc["contacts"]
+            ]
+        })
+
+    return {"duplicates": results}
+
 @fastapi_app.post("/utilities/activity/client-messages")
 async def activity_client_messages(
     date: str = Body(...),
@@ -1924,13 +2052,25 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
                 continue
 
             activities_text = "\n".join([str(a) for a in activities if a])
-            prompt = f""" 
-            You are an assistant summarizing activities performed for a property. 
-            Given the following list of activities, generate a clear and concise summary suitable for a property owner.
-            Focus on the main actions, outcomes, and any important notes. Keep it in 2–3 sentences. 
-            ⚠️ IMPORTANT: DO NOT translate. Keep the summary in the same language as the input activities. 
-            Do not change any names, places, or dates. 
-            Activities: {activities_text} """
+            prompt = f"""
+            You are an assistant writing an email to a property owner summarizing activities performed for their property.
+
+            Based on the activities below, write a clear, professional, and client-friendly email body.
+            The tone should be polite and informative.
+            Summarize the key actions taken, outcomes, and any important notes.
+
+            Do NOT include a subject line.
+            Add greetings like "Dear Sir/Madam" and signatures as Regards, Kostas.
+            Write only the email content body in 2–3 paragraphs.
+
+            ⚠️ IMPORTANT:
+            - DO NOT translate. Keep the language exactly the same as the input activities.
+            - Do NOT change any names, places, or dates.
+            - Do NOT add assumptions or extra information.
+
+            Activities:
+            {activities_text}
+            """
             summary_text = generate_text_with_model(prompt)
 
             # Fetch client email
