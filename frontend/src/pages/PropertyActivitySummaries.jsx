@@ -77,6 +77,13 @@ export default function PropertyActivitySummaries() {
               <p><strong>Property:</strong> {summary.propertyId || "N/A"}</p>
               <p><strong>Indicator:</strong> {summary.indicator || "N/A"}</p>
               <p><strong>Client Email:</strong> {summary.clientEmail || "Not Available"}</p>
+              {summary.periodStart && summary.periodEnd && (
+              <p>
+                <strong>Period:</strong>{" "}
+                {new Date(summary.periodStart).toLocaleDateString()} –{" "}
+                {new Date(summary.periodEnd).toLocaleDateString()}
+              </p>
+              )}
               <p>
                 <strong>Status:</strong> {summary.status}
                 {summary.status === "pending" && (

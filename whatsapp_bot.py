@@ -2053,24 +2053,56 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
 
             activities_text = "\n".join([str(a) for a in activities if a])
             prompt = f"""
-            You are an assistant writing an email to a property owner summarizing activities performed for their property.
+            You are an assistant writing a professional email to a property owner.
 
-            Based on the activities below, write a clear, professional, and client-friendly email body.
-            The tone should be polite and informative.
-            Summarize the key actions taken, outcomes, and any important notes.
+            The purpose of this email is to clearly summarize activities performed for their property.
 
-            Do NOT include a subject line.
-            Add greetings like "Dear Sir/Madam" and signatures as Regards, Kostas.
-            Write only the email content body in 2–3 paragraphs.
+            EMAIL STRUCTURE (MUST FOLLOW EXACTLY):
 
-            ⚠️ IMPORTANT:
-            - DO NOT translate. Keep the language exactly the same as the input activities.
-            - Do NOT change any names, places, or dates.
-            - Do NOT add assumptions or extra information.
+            1) Opening greeting:
+               Start with:
+               "Sayın Mülk Sahibi,"
+
+            2) Introduction line (one sentence only):
+               Write a short introductory sentence explaining that the email contains a summary of activities performed for the property.
+
+            3) Activity summary:
+               - Present the activities as BULLET POINTS.
+               - Each bullet should summarize one activity.
+               - Do NOT modify names, places, or dates.
+               - Do NOT add assumptions.
+
+            4) Closing:
+               End the email with:
+               "İlginiz için teşekkür ederim."
+               Followed by:
+               "Saygılarımla,
+               Kostas"
+
+            STRICT RULES:
+            - Do NOT include a subject line.
+            - Write ONLY the email body.
+            - Whole email should be in Turkish (including activities and greetings).
+            - DO NOT write in first person.
+            - Describe activities as reported events.
+            - You are summarizing records, not actions personally performed by you.
+            
+            Email structure MUST be:
+
+            Greeting
+            
+            Intro sentence
+            
+            • Activity 1  
+            • Activity 2  
+            
+            Closing  
+            Signature
 
             Activities:
             {activities_text}
             """
+
             summary_text = generate_text_with_model(prompt)
 
             # Fetch client email
@@ -2092,6 +2124,8 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
                     "summary": summary_text,
                     "clientEmail": client_email,
                     "status": "pending",
+                    "periodStart": start_date,
+                    "periodEnd": end_date,
                     "createdAt": datetime.utcnow(),
                     "updatedAt": datetime.utcnow()
                 }},
