@@ -109,39 +109,48 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="h-screen flex">
+return (
+  <div className="h-screen flex flex-col">
+    {/* Full-width Header */}
+    <div className="h-[70px] px-4 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
+      <h1 className="text-lg font-semibold text-green-600">
+        Kostas' Dashboard
+      </h1>
+
+      <div className="flex items-center gap-3">
+        <Link
+          to="/utilities"
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition"
+        >
+          Utilities
+        </Link>
+
+        <Link
+          to="/important-links"
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition"
+        >
+          Important links
+        </Link>
+
+        <span className="text-xs text-gray-400">
+          v{__APP_VERSION__}
+        </span>
+      </div>
+    </div>
+
+    {/* Main content */}
+    <div className="flex flex-1 h-full">
       {/* Chat List */}
-      <div className="w-1/3 bg-green-50 border-r border-green-200 flex flex-col h-screen">
-        {/* Header */}
-        <div className="h-[70px] px-4 bg-white border-b sticky top-0 z-20 flex justify-between items-center">
-          <h1 className="text-lg font-semibold text-green-600">
-            Kostas' Dashboard
-          </h1>
-
-          <div className="flex items-center gap-3">
-            <Link
-              to="/utilities"
-              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition"
-            >
-              Utilities
-            </Link>
-            <span className="text-xs text-gray-400">
-              v{__APP_VERSION__}
-            </span>
-          </div>
-        </div>
-
-            <ChatList
-              conversations={conversations}
-              selected={selected}
-              onSelect={openChat}
-              onLoadMore={loadConversations}
-              loading={loadingConversations}
-              hasMore={hasMore}
-              page={page}
-            />
-
+      <div className="w-1/3 bg-green-50 border-r border-green-200 flex flex-col h-full">
+        <ChatList
+          conversations={conversations}
+          selected={selected}
+          onSelect={openChat}
+          onLoadMore={loadConversations}
+          loading={loadingConversations}
+          hasMore={hasMore}
+          page={page}
+        />
       </div>
 
       {/* Chat Window */}
@@ -161,5 +170,6 @@ export default function App() {
         )}
       </div>
     </div>
-  )
+  </div>
+)
 }
