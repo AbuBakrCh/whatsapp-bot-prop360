@@ -1,17 +1,40 @@
 import React from 'react'
 
-export default function ChatList({ conversations = [], onSelect, selected }) {
+export default function ChatList({
+  conversations = [],
+  onSelect,
+  selected,
+  onLoadMore,
+  loading,
+  hasMore,
+  page
+}) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-        <div className="h-[70px] px-4 flex items-center justify-center backdrop-blur-sm bg-white/70 border-b border-green-100 shadow-sm">
-          <h1 className="text-xl font-bold text-gray-800 drop-shadow-sm">Chats</h1>
-        </div>
+      <div className="h-[70px] px-4 flex items-center justify-center backdrop-blur-sm bg-white/70 border-b border-green-100 shadow-sm">
+        <h1 className="text-xl font-bold text-gray-800 drop-shadow-sm">Chats</h1>
+      </div>
 
       {/* Scrollable conversations */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
-        {conversations.length === 0 && (
-          <div className="text-gray-400 text-center mt-10">No chats yet</div>
+      <div
+        className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin"
+        onScroll={(e) => {
+          const { scrollTop, scrollHeight, clientHeight } = e.target
+
+          if (
+            scrollTop + clientHeight >= scrollHeight - 50 &&
+            hasMore &&
+            !loading
+          ) {
+            onLoadMore()
+          }
+        }}
+      >
+        {conversations.length === 0 && !loading && (
+          <div className="text-gray-400 text-center mt-10">
+            No chats yet
+          </div>
         )}
 
         {conversations.map(c => (
@@ -25,11 +48,15 @@ export default function ChatList({ conversations = [], onSelect, selected }) {
             }
           >
             <div className="flex justify-between items-center">
-              <div className="font-medium text-sm truncate">{c.clientName || c.clientNumber}</div>
+              <div className="font-medium text-sm truncate">
+                {c.clientName || c.clientNumber}
+              </div>
               <div className="text-xs text-gray-400">
                 {c.lastTimestamp
                   ? new Date(
-                      c.lastTimestamp.endsWith('Z') ? c.lastTimestamp : c.lastTimestamp + 'Z'
+                      c.lastTimestamp.endsWith('Z')
+                        ? c.lastTimestamp
+                        : c.lastTimestamp + 'Z'
                     ).toLocaleString([], {
                       year: 'numeric',
                       month: 'short',
@@ -40,11 +67,27 @@ export default function ChatList({ conversations = [], onSelect, selected }) {
                   : ''}
               </div>
             </div>
+
             <div className="text-xs text-gray-700 mt-1 truncate">
               {c.lastMessage || 'No messages yet'}
             </div>
           </div>
         ))}
+
+        {/* Initial load */}
+        {loading && page === 1 && (
+          <div className="flex items-center justify-center h-full text-gray-400">
+            Loading chats…
+          </div>
+        )}
+
+        {/* Pagination load */}
+        {loading && page > 1 && hasMore && (
+          <div className="py-3 text-center text-sm text-gray-400">
+            Loading more chats…
+          </div>
+        )}
+
       </div>
     </div>
   )

@@ -5,7 +5,6 @@ import os
 import random
 import smtplib
 import traceback
-from datetime import datetime
 from email.message import EmailMessage
 from time import time
 from urllib.parse import quote
@@ -17,7 +16,7 @@ from bson import ObjectId
 from transfer_ownership import start_scheduler, transfer_ownership
 import uuid
 from fastapi import BackgroundTasks
-
+from datetime import datetime
 import google.generativeai as genai
 import httpx
 import numpy as np
@@ -27,7 +26,7 @@ import pandas as pd
 import socketio
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, Body
+from fastapi import FastAPI, Request, HTTPException, Body, Query
 from fastapi import Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -649,37 +648,90 @@ async def send_from_dashboard(request: Request):
 
 # --- Endpoint to list unique conversations (latest message per client) ---
 @fastapi_app.get("/conversations")
-async def get_conversations():
+async def get_conversations(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100)
+):
+    """
+    Returns paginated list of conversations (latest message per client)
+    """
+
+    skip = (page - 1) * limit
+
+    # ---------- Aggregation Pipeline ----------
     pipeline = [
         {"$sort": {"timestamp": -1}},
-        {"$group": {
-            "_id": "$clientNumber",
-            "lastMessage": {"$first": "$message"},
-            "direction": {"$first": "$direction"},
-            "outgoingSender": {"$first": "$outgoingSender"},
-            "lastTimestamp": {"$first": "$timestamp"}
-        }},
-        {"$sort": {"lastTimestamp": -1}}
+
+        {
+            "$group": {
+                "_id": "$clientNumber",
+                "lastMessage": {"$first": "$message"},
+                "direction": {"$first": "$direction"},
+                "outgoingSender": {"$first": "$outgoingSender"},
+                "lastTimestamp": {"$first": "$timestamp"}
+            }
+        },
+
+        {"$sort": {"lastTimestamp": -1}},
+
+        {
+            "$lookup": {
+                "from": "configs",            # collection name
+                "localField": "_id",           # clientNumber from messages
+                "foreignField": "clientNumber",
+                "as": "client"
+            }
+        },
+
+        {
+            "$addFields": {
+                "clientName": {
+                    "$ifNull": [
+                        {"$arrayElemAt": ["$client.name", 0]},
+                        ""
+                    ]
+                }
+            }
+        },
+
+        {"$skip": skip},
+        {"$limit": limit}
     ]
-    docs = messages_collection.aggregate(pipeline)
-    results = []
-    async for doc in docs:
-        client_number = doc["_id"]
 
-        # Fetch name from configs_collection (if it exists)
-        client_doc = await configs_collection.find_one({"clientNumber": client_number})
-        client_name = client_doc.get("name") if client_doc else ""
+    cursor = messages_collection.aggregate(pipeline)
 
-        results.append({
-            "clientNumber": client_number,
-            "clientName": client_name,
+    conversations = []
+
+    async for doc in cursor:
+        conversations.append({
+            "clientNumber": doc["_id"],
+            "clientName": doc.get("clientName", ""),
             "lastMessage": doc.get("lastMessage"),
             "direction": doc.get("direction"),
             "outgoingSender": doc.get("outgoingSender"),
-            "lastTimestamp": doc.get("lastTimestamp").isoformat() if doc.get("lastTimestamp") else None,
-            "context": doc.get("context")
+            "lastTimestamp": (
+                doc["lastTimestamp"].isoformat()
+                if doc.get("lastTimestamp")
+                else None
+            )
         })
-    return results
+
+    count_pipeline = [
+        {"$group": {"_id": "$clientNumber"}},
+        {"$count": "total"}
+    ]
+
+    count_cursor = messages_collection.aggregate(count_pipeline)
+    count_doc = await count_cursor.to_list(length=1)
+    total = count_doc[0]["total"] if count_doc else 0
+
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "items": conversations
+    }
+
 
 
 # --- Get chat history for a client ---
