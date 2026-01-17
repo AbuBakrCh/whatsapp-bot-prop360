@@ -5,6 +5,7 @@ import os
 import random
 import smtplib
 import traceback
+from typing import Any
 from email.message import EmailMessage
 from time import time
 from urllib.parse import quote
@@ -2036,7 +2037,7 @@ async def delete_contacts(payload: dict):
         traceback.print_exc()
         return {"error": str(e)}
 
-async def process_activity_summary_job(job_id: str, start_date: str, end_date: str):
+async def process_activity_summary_job(job_id: str, start_date: str, end_date: str, client_ids: list[str] | None = None):
     try:
         forms_col = prop_db.formdatas
         summary_col = db.property_activity_summary
@@ -2047,11 +2048,14 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
         end_date = datetime.fromisoformat(end_date)
 
         # Aggregation pipeline
-        pipeline = [
+        pipeline: list[dict[str, Any]] = [
             {
                 "$match": {
                     "indicator": "custom-wyey07pb7",
-                    "metadata.createdAt": {"$gte": start_date, "$lte": end_date}
+                    "metadata.createdAt": {
+                        "$gte": start_date,
+                        "$lte": end_date
+                    }
                 }
             },
             {
@@ -2075,13 +2079,40 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
                 }
             },
             {"$unwind": "$pairs"},
-            {"$match": {"pairs.client": {"$ne": None}, "pairs.property": {"$ne": None}}},
-            {"$group": {
-                "_id": {"client": "$pairs.client", "property": "$pairs.property"},
-                "indicator": {"$first": "$indicator"},
-                "activities": {"$push": "$activityDescription"}
-            }}
+            {
+                "$match": {
+                    "pairs.client": {"$ne": None},
+                    "pairs.property": {"$ne": None}
+                }
+            }
         ]
+
+        if client_ids:
+            client_ids = [str(cid) for cid in client_ids]
+            regex = "|".join([f"\\|{cid}$" for cid in client_ids])
+
+            pipeline.append(
+                {
+                    "$match": {
+                        "pairs.client": {
+                            "$regex": regex
+                        }
+                    }
+                }
+            )
+
+        pipeline.append(
+            {
+                "$group": {
+                    "_id": {
+                        "client": "$pairs.client",
+                        "property": "$pairs.property"
+                    },
+                    "indicator": {"$first": "$indicator"},
+                    "activities": {"$push": "$activityDescription"}
+                }
+            }
+        )
 
         cursor = forms_col.aggregate(pipeline)
         results = await cursor.to_list(length=None)
@@ -2121,6 +2152,7 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
                - Present the activities as BULLET POINTS.
                - Each bullet should summarize one activity.
                - Do NOT modify names, places, or dates.
+               - Translate all activity descriptions into Turkish.
                - Do NOT add assumptions.
 
             4) Closing:
@@ -2133,20 +2165,18 @@ async def process_activity_summary_job(job_id: str, start_date: str, end_date: s
             STRICT RULES:
             - Do NOT include a subject line.
             - Write ONLY the email body.
-            - Whole email should be in Turkish (including activities and greetings).
-            - DO NOT write in first person.
-            - Describe activities as reported events.
-            - You are summarizing records, not actions personally performed by you.
-            
+            - Whole resultant email body should only be in Turkish (including activities and greetings).
+            - Describe activities as reported events, not actions personally performed.
+
             Email structure MUST be:
 
             Greeting
-            
+
             Intro sentence
-            
+
             • Activity 1  
             • Activity 2  
-            
+
             Closing  
             Signature
 
@@ -2209,6 +2239,7 @@ async def group_forms_by_client_property(payload: dict, background_tasks: Backgr
     try:
         start_date = payload.get("startDate")
         end_date = payload.get("endDate")
+        client_ids = payload.get("clientIds")
 
         if not start_date or not end_date:
             return {"error": "startDate and endDate are required"}
@@ -2227,7 +2258,7 @@ async def group_forms_by_client_property(payload: dict, background_tasks: Backgr
         })
 
         # Add background task
-        background_tasks.add_task(process_activity_summary_job, job_id, start_date, end_date)
+        background_tasks.add_task(process_activity_summary_job, job_id, start_date, end_date, client_ids)
 
         return {"jobId": job_id}
 

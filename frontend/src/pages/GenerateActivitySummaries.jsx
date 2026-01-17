@@ -1,13 +1,17 @@
 import React, { useState, useRef } from "react";
-import { generateActivitySummaries, getActivitySummaryProgress } from "../api";
+import {
+  generateActivitySummaries,
+  getActivitySummaryProgress,
+} from "../api";
 
 export default function GenerateActivitySummaries() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [clientIds, setClientIds] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [progress, setProgress] = useState(0);
-  const [total, setTotal] = useState(0); // store total count from progress
+  const [total, setTotal] = useState(0);
 
   const jobIdRef = useRef(null);
   const intervalRef = useRef(null);
@@ -26,9 +30,19 @@ export default function GenerateActivitySummaries() {
     try {
       const start = `${startDate}T00:00:00`;
       const end = `${endDate}T23:59:59`;
-      const payload = { startDate: start, endDate: end };
 
-      // Start job
+      // Parse comma-separated client IDs
+      const clientIdList = clientIds
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+      const payload = {
+        startDate: start,
+        endDate: end,
+        ...(clientIdList.length > 0 && { clientIds: clientIdList }),
+      };
+
       const data = await generateActivitySummaries(payload);
       if (data.error) {
         setStatusMsg(`Error: ${data.error}`);
@@ -97,6 +111,20 @@ export default function GenerateActivitySummaries() {
             className="border border-slate-300 rounded-md px-3 py-2"
           />
         </label>
+
+        <label className="flex flex-col gap-1 text-gray-700">
+          Client ID(s):
+          <input
+            type="text"
+            placeholder="155726724008213, 998877665544"
+            value={clientIds}
+            onChange={(e) => setClientIds(e.target.value)}
+            className="border border-slate-300 rounded-md px-3 py-2"
+          />
+          <span className="text-sm text-gray-500">
+            Optional — comma-separated client IDs
+          </span>
+        </label>
       </div>
 
       {/* Action Button */}
@@ -104,7 +132,9 @@ export default function GenerateActivitySummaries() {
         onClick={handleGenerate}
         disabled={loading}
         className={`w-full px-4 py-2 rounded-md text-white font-medium transition ${
-          loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
+          loading
+            ? "bg-green-300 cursor-not-allowed"
+            : "bg-green-600 hover:bg-green-700"
         }`}
       >
         Generate
@@ -118,7 +148,7 @@ export default function GenerateActivitySummaries() {
         <div
           className="bg-green-600 h-4 rounded"
           style={{ width: `${progress}%`, transition: "width 0.3s" }}
-        ></div>
+        />
       </div>
     </div>
   );
