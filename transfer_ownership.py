@@ -199,8 +199,8 @@ def start_scheduler(prop_db):
     """
     scheduler.add_job(
         transfer_ownership,
-        CronTrigger(minute="*/10"),
-        args=[prop_db],  # every 10 minutes
+        CronTrigger(minute="*/20"),
+        args=[prop_db],  # every 20 minutes
         id="transfer_ownership_job",
         replace_existing=True,
         max_instances=1,

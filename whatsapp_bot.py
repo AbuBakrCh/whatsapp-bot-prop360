@@ -1860,25 +1860,35 @@ async def add_contacts(payload: dict):
         # -------------------------------------
         contacts_filter = {
             "indicator": "contacts",
-            "merchantId": source_merchant_id
+            "merchantId": source_merchant_id,
+            "$and": []
         }
 
-        # Optional boolean toggles
-        if search_for_property is not None and search_for_property is True:
-            contacts_filter["data.field-1763539699080-ku2jwh8je"] = "Yes"
+        # searchForProperty filter
+        if search_for_property is True:
+            contacts_filter["$and"].append({
+                "data.field-1763539699080-ku2jwh8je": "Yes"
+            })
         else:
-            contacts_filter["$or"] = [
-                {"data.field-1763539699080-ku2jwh8je": {"$exists": False}},
-                {"data.field-1763539699080-ku2jwh8je": "No"}
-            ]
+            contacts_filter["$and"].append({
+                "$or": [
+                    {"data.field-1763539699080-ku2jwh8je": {"$exists": False}},
+                    {"data.field-1763539699080-ku2jwh8je": "No"}
+                ]
+            })
 
-        if does_he_have_property is not None and does_he_have_property is True:
-            contacts_filter["data.field-1760945578087-1d922hj0e"] = "Yes"
+        # doesHeHaveProperty filter
+        if does_he_have_property is True:
+            contacts_filter["$and"].append({
+                "data.field-1760945578087-1d922hj0e": "Yes"
+            })
         else:
-            contacts_filter["$or"] = [
-                {"data.field-1760945578087-1d922hj0e": {"$exists": False}},
-                {"data.field-1760945578087-1d922hj0e": "No"}
-            ]
+            contacts_filter["$and"].append({
+                "$or": [
+                    {"data.field-1760945578087-1d922hj0e": {"$exists": False}},
+                    {"data.field-1760945578087-1d922hj0e": "No"}
+                ]
+            })
 
         contacts_col = prop_db.formdatas
 
@@ -1979,25 +1989,35 @@ async def delete_contacts(payload: dict):
         # -------------------------------------
         contacts_filter = {
             "indicator": "contacts",
-            "merchantId": source_merchant_id
+            "merchantId": source_merchant_id,
+            "$and": []
         }
 
-        # Optional boolean toggles
-        if search_for_property is not None and search_for_property is True:
-            contacts_filter["data.field-1763539699080-ku2jwh8je"] = "Yes"
+        # searchForProperty filter
+        if search_for_property is True:
+            contacts_filter["$and"].append({
+                "data.field-1763539699080-ku2jwh8je": "Yes"
+            })
         else:
-            contacts_filter["$or"] = [
-                {"data.field-1763539699080-ku2jwh8je": {"$exists": False}},
-                {"data.field-1763539699080-ku2jwh8je": "No"}
-            ]
+            contacts_filter["$and"].append({
+                "$or": [
+                    {"data.field-1763539699080-ku2jwh8je": {"$exists": False}},
+                    {"data.field-1763539699080-ku2jwh8je": "No"}
+                ]
+            })
 
-        if does_he_have_property is not None and does_he_have_property is True:
-            contacts_filter["data.field-1760945578087-1d922hj0e"] = "Yes"
+        # doesHeHaveProperty filter
+        if does_he_have_property is True:
+            contacts_filter["$and"].append({
+                "data.field-1760945578087-1d922hj0e": "Yes"
+            })
         else:
-            contacts_filter["$or"] = [
-                {"data.field-1760945578087-1d922hj0e": {"$exists": False}},
-                {"data.field-1760945578087-1d922hj0e": "No"}
-            ]
+            contacts_filter["$and"].append({
+                "$or": [
+                    {"data.field-1760945578087-1d922hj0e": {"$exists": False}},
+                    {"data.field-1760945578087-1d922hj0e": "No"}
+                ]
+            })
 
         contacts_col = prop_db.formdatas
 
