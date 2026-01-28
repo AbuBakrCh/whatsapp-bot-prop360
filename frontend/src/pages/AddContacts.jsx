@@ -13,8 +13,13 @@ export default function AddingContacts() {
   const [responseMsg, setResponseMsg] = useState("");
 
   const handleProcess = async (actionType) => {
-    if (!sourceMerchantEmail || !targetMerchantEmails) {
-      setResponseMsg("Source Merchant Email and Target Merchant Emails are required.");
+    if (!targetMerchantEmails) {
+      setResponseMsg("Target Merchant Emails are required.");
+      return;
+    }
+
+    if (actionType === "add" && !sourceMerchantEmail) {
+      setResponseMsg("Source Merchant Email is required for adding contacts.");
       return;
     }
 
