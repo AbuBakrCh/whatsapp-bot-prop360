@@ -1951,23 +1951,25 @@ async def delete_contacts(payload: dict):
         search_for_property = filters.get("searchForProperty")
         does_he_have_property = filters.get("doesHeHaveProperty")
 
-        if not source_email or not target_emails:
-            return {"error": "Source merchant email and target merchant emails are required."}
+        if not target_emails:
+            return {"error": "Target merchant emails are required."}
 
         users_col = prop_db.users
 
         # -------------------------------------
         # Fetch source merchant
         # -------------------------------------
-        source_merchant = await users_col.find_one({"email": source_email})
+        source_merchant_id = None
 
-        if not source_merchant:
-            return {"error": "Source merchant not found."}
+        if source_email:
+            source_merchant = await users_col.find_one({"email": source_email})
 
-        source_merchant_id = source_merchant.get("merchantId")
-        if not source_merchant_id:
-            return {"error": "Source merchant does not have merchantId."}
+            if not source_merchant:
+                return {"error": "Source merchant not found."}
 
+            source_merchant_id = source_merchant.get("merchantId")
+            if not source_merchant_id:
+                return {"error": "Source merchant does not have merchantId."}
         # -------------------------------------
         # Fetch target merchants
         # -------------------------------------
@@ -1989,9 +1991,11 @@ async def delete_contacts(payload: dict):
         # -------------------------------------
         contacts_filter = {
             "indicator": "contacts",
-            "merchantId": source_merchant_id,
             "$and": []
         }
+
+        if source_merchant_id:
+            contacts_filter["merchantId"] = source_merchant_id
 
         # searchForProperty filter
         if search_for_property is True:
