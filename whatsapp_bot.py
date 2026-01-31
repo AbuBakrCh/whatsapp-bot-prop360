@@ -14,6 +14,8 @@ from PIL import Image
 import io
 from collections import defaultdict
 from bson import ObjectId
+
+from send_followup_email import start_followup_email_scheduler, send_followup_emails
 from transfer_ownership import start_scheduler, transfer_ownership
 import uuid
 from fastapi import BackgroundTasks
@@ -619,6 +621,7 @@ async def ensure_indexes():
     await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
     await transfer_ownership(prop_db)
     start_scheduler(prop_db)
+    start_followup_email_scheduler(prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
