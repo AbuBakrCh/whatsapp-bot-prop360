@@ -1695,10 +1695,10 @@ async def delete_properties(payload: dict):
     Remove shared merchant access from properties.
 
     Steps:
-    - Get source merchant by email → get merchantId
+    - (Optional) Get source merchant by email → merchantId
     - Get all target merchants by email → extract their merchantIds
     - Filter properties where:
-        merchantId = source merchantId
+        merchantId = source merchantId (if provided)
         city = given city
         division = given division
         isPublic = published toggle
@@ -1713,22 +1713,25 @@ async def delete_properties(payload: dict):
         division = filters.get("division")
         published = filters.get("published")
 
-        if not source_email or not target_emails:
-            return {"error": "Source merchant email and target merchant emails are required."}
+        if not target_emails:
+            return {"error": "Target merchant emails are required."}
 
         users_col = prop_db.users
 
         # -------------------------------------
-        # Fetch source merchant
+        # Fetch source merchant (optional)
         # -------------------------------------
-        source_merchant = await users_col.find_one({"email": source_email})
+        source_merchant_id = None
 
-        if not source_merchant:
-            return {"error": "Source merchant not found."}
+        if source_email:
+            source_merchant = await users_col.find_one({"email": source_email})
 
-        source_merchant_id = source_merchant.get("merchantId")
-        if not source_merchant_id:
-            return {"error": "Source merchant does not have merchantId."}
+            if not source_merchant:
+                return {"error": "Source merchant not found."}
+
+            source_merchant_id = source_merchant.get("merchantId")
+            if not source_merchant_id:
+                return {"error": "Source merchant does not have merchantId."}
 
         # -------------------------------------
         # Fetch target merchants
@@ -1751,7 +1754,12 @@ async def delete_properties(payload: dict):
         # -------------------------------------
         # Build property filter
         # -------------------------------------
-        prop_filter = {"merchantId": source_merchant_id}
+        prop_filter = {
+            "indicator": "properties"
+        }
+
+        if source_merchant_id:
+            prop_filter["merchantId"] = source_merchant_id
 
         if city:
             prop_filter["data.field-1744021694415-n0vk8fy4r"] = city
@@ -1761,8 +1769,6 @@ async def delete_properties(payload: dict):
 
         if published is not None:
             prop_filter["isPublic"] = bool(published)
-
-        prop_filter["indicator"] = "properties"
 
         properties_col = prop_db.formdatas
 
