@@ -5,6 +5,7 @@ import ProcessBankStatementsDrive from "./ProcessBankStatementsDrive";
 import ShowDuplicates from "./ShowDuplicates";
 import GenerateClientMessages from "./GenerateClientMessages"
 import AddProperties from "./AddProperties"
+import ManageTimetables from "./ManageTimetables"
 import AddContacts from "./AddContacts"
 import GenerateActivitySummaries from "./GenerateActivitySummaries";
 import PropertyActivitySummaries from "./PropertyActivitySummaries"
@@ -33,6 +34,7 @@ export default function Utilities() {
         <AddContacts />
         <GenerateActivitySummaries />
         <PropertyActivitySummaries />
+        <ManageTimetables />
       </div>
     </div>
   );

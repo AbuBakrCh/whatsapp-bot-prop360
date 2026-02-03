@@ -120,7 +120,7 @@ export default function AddingProperties() {
             loading ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
           }`}
         >
-          {loading ? "Processing..." : "Add Property"}
+          {loading ? "Processing..." : "Share Property"}
         </button>
 
         <button
@@ -130,7 +130,7 @@ export default function AddingProperties() {
             loading ? "bg-red-300 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
           }`}
         >
-          {loading ? "Processing..." : "Delete Property"}
+          {loading ? "Processing..." : "Unshare Property"}
         </button>
       </div>
 

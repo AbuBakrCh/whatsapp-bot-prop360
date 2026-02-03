@@ -200,3 +200,23 @@ export async function updateActivitySummaryStatus(summaryId, status) {
     return { error: err.message || "Failed to update status" };
   }
 }
+
+export async function addTimetables(payload) {
+  try {
+    const response = await axios.post(`${BASE}/timetables/add`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error adding timetables:", err);
+    throw err;
+  }
+}
+
+export async function deleteTimetables(payload) {
+  try {
+    const response = await axios.post(`${BASE}/timetables/delete`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error deleting timetables:", err);
+    throw err;
+  }
+}

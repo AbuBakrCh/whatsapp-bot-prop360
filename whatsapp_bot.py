@@ -2064,6 +2064,206 @@ async def delete_contacts(payload: dict):
         traceback.print_exc()
         return {"error": str(e)}
 
+@fastapi_app.post("/timetables/add")
+async def add_timetables(payload: dict):
+    """
+    Add shared merchant access to timetables.
+
+    Steps:
+    - Get source merchant by email → merchantId
+    - Get target merchants by email → merchantIds
+    - Fetch timetables where:
+        indicator = "timetables"
+        merchantId = source merchantId
+    - Add target merchantIds to sharedWithMerchants
+    """
+    try:
+        source_email = payload.get("sourceMerchantEmail")
+        target_emails = payload.get("targetMerchantEmails", [])
+
+        if not source_email or not target_emails:
+            return {
+                "error": "Source merchant email and target merchant emails are required."
+            }
+
+        users_col = prop_db.users
+
+        # -------------------------------------
+        # Fetch source merchant
+        # -------------------------------------
+        source_merchant = await users_col.find_one({"email": source_email})
+
+        if not source_merchant:
+            return {"error": "Source merchant not found."}
+
+        source_merchant_id = source_merchant.get("merchantId")
+        if not source_merchant_id:
+            return {"error": "Source merchant does not have merchantId."}
+
+        # -------------------------------------
+        # Fetch target merchants
+        # -------------------------------------
+        target_cursor = users_col.find({"email": {"$in": target_emails}})
+        target_merchants = await target_cursor.to_list(length=None)
+
+        if not target_merchants:
+            return {"error": "No target merchants found for provided emails."}
+
+        target_merchant_ids = [
+            m.get("merchantId") for m in target_merchants if m.get("merchantId")
+        ]
+
+        if not target_merchant_ids:
+            return {"error": "Target merchants do not have merchantId fields."}
+
+        timetables_col = prop_db.formdatas
+
+        # -------------------------------------
+        # Timetables filter (NO extra criteria)
+        # -------------------------------------
+        timetables_filter = {
+            "indicator": "custom-wyey07pb7",
+            "status": "active",
+            "merchantId": source_merchant_id
+        }
+
+        # -------------------------------------
+        # Query timetables
+        # -------------------------------------
+        timetables_cursor = timetables_col.find(timetables_filter)
+        timetables = await timetables_cursor.to_list(length=None)
+
+        if not timetables:
+            return {
+                "message": "No timetables found for the source merchant.",
+                "updated": 0
+            }
+
+        # -------------------------------------
+        # Update timetables
+        # -------------------------------------
+        result = await timetables_col.update_many(
+            timetables_filter,
+            {
+                "$addToSet": {
+                    "sharedWithMerchants": {"$each": target_merchant_ids}
+                }
+            }
+        )
+
+        return {
+            "message": "Timetables updated successfully.",
+            "updated": result.modified_count,
+            "sourceMerchantId": source_merchant_id,
+            "targetMerchantIds": target_merchant_ids
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+@fastapi_app.post("/timetables/delete")
+async def delete_timetables(payload: dict):
+    """
+    Remove shared merchant access from timetables.
+
+    Steps:
+    - Get source merchant by email → merchantId (optional)
+    - Get target merchants by email → merchantIds
+    - Fetch timetables where:
+        indicator = "timetables"
+        merchantId = source merchantId (if provided)
+    - Remove target merchantIds from sharedWithMerchants
+    """
+    try:
+        source_email = payload.get("sourceMerchantEmail")
+        target_emails = payload.get("targetMerchantEmails", [])
+
+        if not target_emails:
+            return {"error": "Target merchant emails are required."}
+
+        users_col = prop_db.users
+
+        # -------------------------------------
+        # Fetch source merchant (optional)
+        # -------------------------------------
+        source_merchant_id = None
+
+        if source_email:
+            source_merchant = await users_col.find_one({"email": source_email})
+
+            if not source_merchant:
+                return {"error": "Source merchant not found."}
+
+            source_merchant_id = source_merchant.get("merchantId")
+            if not source_merchant_id:
+                return {"error": "Source merchant does not have merchantId."}
+
+        # -------------------------------------
+        # Fetch target merchants
+        # -------------------------------------
+        target_cursor = users_col.find({"email": {"$in": target_emails}})
+        target_merchants = await target_cursor.to_list(length=None)
+
+        if not target_merchants:
+            return {"error": "No target merchants found for provided emails."}
+
+        target_merchant_ids = [
+            m.get("merchantId") for m in target_merchants if m.get("merchantId")
+        ]
+
+        if not target_merchant_ids:
+            return {"error": "Target merchants do not have merchantId fields."}
+
+        timetables_col = prop_db.formdatas
+
+        # -------------------------------------
+        # Build timetables filter (NO extra filters)
+        # -------------------------------------
+        timetables_filter = {
+            "indicator": "custom-wyey07pb7",
+            "status": "active"
+        }
+
+        if source_merchant_id:
+            timetables_filter["merchantId"] = source_merchant_id
+
+        # -------------------------------------
+        # Query timetables
+        # -------------------------------------
+        timetables_cursor = timetables_col.find(timetables_filter)
+        timetables = await timetables_cursor.to_list(length=None)
+
+        if not timetables:
+            return {
+                "message": "No timetables matched the given criteria.",
+                "updated": 0
+            }
+
+        # -------------------------------------
+        # Remove merchant IDs
+        # -------------------------------------
+        result = await timetables_col.update_many(
+            timetables_filter,
+            {
+                "$pull": {
+                    "sharedWithMerchants": {"$in": target_merchant_ids}
+                }
+            }
+        )
+
+        return {
+            "message": "Timetables updated successfully (deleted access).",
+            "updated": result.modified_count,
+            "sourceMerchantId": source_merchant_id,
+            "targetMerchantIdsRemoved": target_merchant_ids
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
 async def process_activity_summary_job(job_id: str, start_date: str, end_date: str, client_ids: list[str] | None = None):
     try:
         forms_col = prop_db.formdatas

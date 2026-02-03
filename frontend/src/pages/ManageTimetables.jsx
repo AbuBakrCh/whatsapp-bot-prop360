@@ -1,13 +1,9 @@
 import React, { useState } from "react";
-import { addContacts, deleteContacts } from "../api";
+import { addTimetables, deleteTimetables } from "../api";
 
-export default function AddingContacts() {
+export default function ManageTimetables() {
   const [sourceMerchantEmail, setSourceMerchantEmail] = useState("");
   const [targetMerchantEmails, setTargetMerchantEmails] = useState("");
-
-  // New toggles
-  const [searchForProperty, setSearchForProperty] = useState(false);
-  const [doesHeHaveProperty, setDoesHeHaveProperty] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [responseMsg, setResponseMsg] = useState("");
@@ -19,7 +15,7 @@ export default function AddingContacts() {
     }
 
     if (actionType === "add" && !sourceMerchantEmail) {
-      setResponseMsg("Source Merchant Email is required for adding contacts.");
+      setResponseMsg("Source Merchant Email is required for adding timetables.");
       return;
     }
 
@@ -33,29 +29,27 @@ export default function AddingContacts() {
           .split(",")
           .map((email) => email.trim())
           .filter(Boolean),
-        filters: {
-          searchForProperty,
-          doesHeHaveProperty,
-        },
       };
 
       let res;
 
       if (actionType === "add") {
-        res = await addContacts(payload);
+        res = await addTimetables(payload);
       } else if (actionType === "delete") {
-        res = await deleteContacts(payload);  // <-- Delete endpoint called here
+        res = await deleteTimetables(payload);
       }
 
-      if (res.error) {
+      if (res?.error) {
         setResponseMsg(res.error);
-      } else if (res.message) {
+      } else if (res?.message) {
         setResponseMsg(res.message);
       } else {
         setResponseMsg("Operation completed.");
       }
     } catch (err) {
-      setResponseMsg(err.response?.data?.error || "Failed to process contacts.");
+      setResponseMsg(
+        err.response?.data?.error || "Failed to process timetables."
+      );
     } finally {
       setLoading(false);
     }
@@ -63,7 +57,9 @@ export default function AddingContacts() {
 
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Manage Contacts</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">
+        Manage Timetables
+      </h2>
 
       {/* Main Inputs */}
       <div className="flex flex-col gap-4 mb-6">
@@ -83,31 +79,6 @@ export default function AddingContacts() {
         />
       </div>
 
-      {/* Filters */}
-      <h3 className="text-xl font-semibold text-gray-700 mb-2">Filters</h3>
-
-      <div className="flex flex-col gap-4 mb-6">
-        <label className="flex items-center gap-2 text-gray-700">
-          <input
-            type="checkbox"
-            checked={searchForProperty}
-            onChange={(e) => setSearchForProperty(e.target.checked)}
-            className="w-4 h-4"
-          />
-          Search For Property?
-        </label>
-
-        <label className="flex items-center gap-2 text-gray-700">
-          <input
-            type="checkbox"
-            checked={doesHeHaveProperty}
-            onChange={(e) => setDoesHeHaveProperty(e.target.checked)}
-            className="w-4 h-4"
-          />
-          Does He Have Property?
-        </label>
-      </div>
-
       {/* Action Buttons */}
       <div className="flex gap-4">
         <button
@@ -119,7 +90,7 @@ export default function AddingContacts() {
               : "bg-green-600 hover:bg-green-700"
           }`}
         >
-          {loading ? "Processing..." : "Share Contact"}
+          {loading ? "Processing..." : "Share Timetable"}
         </button>
 
         <button
@@ -131,7 +102,7 @@ export default function AddingContacts() {
               : "bg-red-600 hover:bg-red-700"
           }`}
         >
-          {loading ? "Processing..." : "Unshare Contact"}
+          {loading ? "Processing..." : "Unshare Timetable"}
         </button>
       </div>
 
