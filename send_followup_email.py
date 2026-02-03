@@ -135,6 +135,7 @@ def start_followup_email_scheduler(prop_db):
         max_instances=1,
         misfire_grace_time=3600,
     )
+    scheduler.start()
 
 def send_email(to: str, subject: str, body: str, cc: list[str] | None = None):
     """
