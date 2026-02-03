@@ -72,28 +72,28 @@ async def send_followup_emails(prop_db):
             .strip()
         )
 
-        subject = "Takip Gerekiyor: Bekleyen Aktivite"
+        subject = "Action Required: Pending Activity"
 
         body = f"""
-        <p>Merhaba,</p>
+        <p>Hello,</p>
 
-        <p>Aşağıdaki aktivite hakkında bir takip yapılması gerekmektedir:</p>
+        <p>The following activity requires your attention:</p>
 
         <blockquote>
         {activity_desc}
         </blockquote>
 
-        <p>Lütfen en kısa sürede bir güncelleme sağlayınız.</p>
+        <p>Please provide an update as soon as possible.</p>
 
-        <p>Aktiviteyi görüntülemek ve güncellemek için aşağıdaki linki kullanabilirsiniz:</p>
+        <p>You can view and update the activity using the link below:</p>
 
         <p>
         <a href="https://prop360.pro/dashboard/forms/custom-wyey07pb7/{doc_id}">
-        Aktiviteyi Görüntüle
+        View Activity
         </a>
         </p>
 
-        <p>Saygılarımızla,<br/>
+        <p>Best regards,<br/>
         Kostas</p>
         """
 

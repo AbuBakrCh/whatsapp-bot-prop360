@@ -6,6 +6,7 @@ import ShowDuplicates from "./ShowDuplicates";
 import GenerateClientMessages from "./GenerateClientMessages"
 import AddProperties from "./AddProperties"
 import ManageTimetables from "./ManageTimetables"
+import ManageCashflows from "./ManageCashflows"
 import AddContacts from "./AddContacts"
 import GenerateActivitySummaries from "./GenerateActivitySummaries";
 import PropertyActivitySummaries from "./PropertyActivitySummaries"
@@ -35,6 +36,7 @@ export default function Utilities() {
         <GenerateActivitySummaries />
         <PropertyActivitySummaries />
         <ManageTimetables />
+        <ManageCashflows />
       </div>
     </div>
   );

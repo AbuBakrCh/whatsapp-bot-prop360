@@ -220,3 +220,23 @@ export async function deleteTimetables(payload) {
     throw err;
   }
 }
+
+export async function addCashflows(payload) {
+  try {
+    const response = await axios.post(`${BASE}/cashflows/add`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error adding cashflows:", err);
+    throw err;
+  }
+}
+
+export async function deleteCashflows(payload) {
+  try {
+    const response = await axios.post(`${BASE}/cashflows/delete`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error deleting cashflows:", err);
+    throw err;
+  }
+}
