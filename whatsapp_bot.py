@@ -1869,21 +1869,21 @@ async def add_contacts(payload: dict):
         # -------------------------------------
         contacts_filter = {
             "indicator": "contacts",
-            "merchantId": source_merchant_id,
-            "$and": []
+            "merchantId": source_merchant_id
         }
+
+        and_conditions = []
 
         # searchForProperty filter
         if search_for_property is True:
-            contacts_filter["$and"].append({
-                "data.field-1763539699080-ku2jwh8je": "Yes"
-            })
+            and_conditions.append({"data.field-1763539699080-ku2jwh8je": "Yes"})
 
         # doesHeHaveProperty filter
         if does_he_have_property is True:
-            contacts_filter["$and"].append({
-                "data.field-1760945578087-1d922hj0e": "Yes"
-            })
+            and_conditions.append({"data.field-1760945578087-1d922hj0e": "Yes"})
+
+        if and_conditions:
+            contacts_filter["$and"] = and_conditions
 
         contacts_col = prop_db.formdatas
 
@@ -1968,8 +1968,9 @@ async def delete_contacts(payload: dict):
         # -------------------------------------
         # Fetch target merchants
         # -------------------------------------
-        target_cursor = users_col.find({"email": {"$in": target_emails}})
-        target_merchants = await target_cursor.to_list(length=None)
+        target_merchants = await users_col.find(
+            {"email": {"$in": target_emails}}
+        ).to_list(length=None)
 
         if not target_merchants:
             return {"error": "No target merchants found for provided emails."}
@@ -1984,34 +1985,25 @@ async def delete_contacts(payload: dict):
         # -------------------------------------
         # Build contacts filter
         # -------------------------------------
-        contacts_filter = {
-            "indicator": "contacts",
-            "$and": []
-        }
-
+        contacts_filter = {"indicator": "contacts"}
         if source_merchant_id:
             contacts_filter["merchantId"] = source_merchant_id
 
-        # searchForProperty filter
+        # Build $and conditions only if necessary
+        and_conditions = []
         if search_for_property is True:
-            contacts_filter["$and"].append({
-                "data.field-1763539699080-ku2jwh8je": "Yes"
-            })
-
-        # doesHeHaveProperty filter
+            and_conditions.append({"data.field-1763539699080-ku2jwh8je": "Yes"})
         if does_he_have_property is True:
-            contacts_filter["$and"].append({
-                "data.field-1760945578087-1d922hj0e": "Yes"
-            })
+            and_conditions.append({"data.field-1760945578087-1d922hj0e": "Yes"})
+        if and_conditions:
+            contacts_filter["$and"] = and_conditions
 
         contacts_col = prop_db.formdatas
 
         # -------------------------------------
         # Query contacts to update
         # -------------------------------------
-        contacts_cursor = contacts_col.find(contacts_filter)
-        contacts = await contacts_cursor.to_list(length=None)
-
+        contacts = await contacts_col.find(contacts_filter).to_list(length=None)
         if not contacts:
             return {
                 "message": "No contacts matched the given filters.",
@@ -2023,11 +2015,7 @@ async def delete_contacts(payload: dict):
         # -------------------------------------
         result = await contacts_col.update_many(
             contacts_filter,
-            {
-                "$pull": {
-                    "sharedWithMerchants": {"$in": target_merchant_ids}
-                }
-            }
+            {"$pull": {"sharedWithMerchants": {"$in": target_merchant_ids}}}
         )
 
         return {
