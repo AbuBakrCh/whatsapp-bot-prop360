@@ -25,7 +25,7 @@ if not logger.handlers:
 def start_tax_emails_scheduler(prop_db):
     scheduler.add_job(
         send_tax_emails_to_contacts,
-        CronTrigger(minute="*"),
+        CronTrigger(minute=15),
         args=[prop_db],
         id="send_tax_emails_jobs",
         replace_existing=True,
