@@ -1,25 +1,20 @@
 import asyncio
 import csv
+import io
 import mimetypes
 import os
 import random
+import re
 import smtplib
 import traceback
-from typing import Any
+import uuid
+from collections import defaultdict
+from datetime import datetime
 from email.message import EmailMessage
 from time import time
+from typing import Any
 from urllib.parse import quote
-import re
-from PIL import Image
-import io
-from collections import defaultdict
-from bson import ObjectId
 
-from send_followup_email import start_followup_email_scheduler, send_followup_emails
-from transfer_ownership import start_scheduler, transfer_ownership
-import uuid
-from fastapi import BackgroundTasks
-from datetime import datetime
 import google.generativeai as genai
 import httpx
 import numpy as np
@@ -28,12 +23,19 @@ import pandas as pd
 # Socket.IO & Motor (async Mongo)
 import socketio
 import uvicorn
+from PIL import Image
+from bson import ObjectId
 from dotenv import load_dotenv
+from fastapi import BackgroundTasks
 from fastapi import FastAPI, Request, HTTPException, Body, Query
 from fastapi import Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
+
+from send_followup_email import start_followup_email_scheduler, send_followup_emails
+from send_tax_emails import start_tax_emails_scheduler
+from transfer_ownership import start_scheduler, transfer_ownership
 
 fastapi_app = FastAPI()
 
@@ -620,6 +622,7 @@ async def receive(request: Request):
 async def ensure_indexes():
     await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
     await transfer_ownership(prop_db)
+    start_tax_emails_scheduler(prop_db)
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
 
