@@ -1646,7 +1646,7 @@ async def add_properties(payload: dict):
         if division:
             prop_filter["data.field-1756930628075-gz12s60tm"] = division
 
-        if published is not None:
+        if published:
             prop_filter["isPublic"] = bool(published)
 
         prop_filter["indicator"] = "properties"
@@ -1767,7 +1767,7 @@ async def delete_properties(payload: dict):
         if division:
             prop_filter["data.field-1756930628075-gz12s60tm"] = division
 
-        if published is not None:
+        if published:
             prop_filter["isPublic"] = bool(published)
 
         properties_col = prop_db.formdatas
