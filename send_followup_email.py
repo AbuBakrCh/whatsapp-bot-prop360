@@ -26,8 +26,8 @@ FOLLOWUP_CC = ["ka@investgreece.gr"]
 async def send_followup_emails(prop_db):
     """
     Task: send_followup_emails
-    - Finds eligible custom-wyey07pb7 forms
-    - Sends follow-up email
+    - Sends follow-up emails up to allowed count
+    - Never sends more than configured limit
     """
 
     logger.info("Starting send_followup_emails task")
@@ -35,7 +35,8 @@ async def send_followup_emails(prop_db):
     formdatas_col = prop_db.formdatas
     users_col = prop_db.users
 
-    now_iso = datetime.now(dt_timezone.utc).isoformat()
+    now = datetime.now(dt_timezone.utc)
+    now_iso = now.isoformat()
 
     query = {
         "indicator": "custom-wyey07pb7",
@@ -49,6 +50,22 @@ async def send_followup_emails(prop_db):
     skipped = 0
 
     async for doc in cursor:
+        data = doc.get("data", {})
+
+        max_followups = int(
+            data.get("field-1770024881104-0f0xns6rp", 0) or 0
+        )
+
+        sent_count = int(doc.get("followupEmailSentCount", 0))
+
+        if max_followups <= 0:
+            skipped += 1
+            continue
+
+        if sent_count >= max_followups:
+            skipped += 1
+            continue
+
         created_by = doc.get("metadata", {}).get("createdBy")
         if not created_by:
             skipped += 1
@@ -67,8 +84,7 @@ async def send_followup_emails(prop_db):
         doc_id = str(doc["_id"])
 
         activity_desc = (
-            doc.get("data", {})
-            .get("field-1760213212062-ask5v2fuy", "")
+            data.get("field-1760213212062-ask5v2fuy", "")
             .strip()
         )
 
@@ -97,14 +113,39 @@ async def send_followup_emails(prop_db):
         Kostas</p>
         """
 
-        send_email(
-            to=email,
-            subject=subject,
-            body=body,
-            cc=FOLLOWUP_CC
-        )
+        try:
+            send_email(
+                to=email,
+                subject=subject,
+                body=body,
+                cc=FOLLOWUP_CC
+            )
 
-        processed += 1
+            await formdatas_col.update_one(
+                {
+                    "_id": doc["_id"],
+                    "followupEmailSentCount": sent_count
+                },
+                {
+                    "$set": {
+                        "lastFollowupEmailAt": now
+                    },
+                    "$inc": {
+                        "followupEmailSentCount": 1
+                    }
+                }
+            )
+
+            processed += 1
+            logger.info(
+                "Follow-up sent to %s (%s/%s)",
+                email,
+                sent_count + 1,
+                max_followups
+            )
+
+        except Exception as e:
+            logger.exception("Failed to send follow-up to %s", email)
 
     logger.info(
         "send_followup_emails completed | processed=%s | skipped=%s",
