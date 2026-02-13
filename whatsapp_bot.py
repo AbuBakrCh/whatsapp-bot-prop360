@@ -1178,7 +1178,7 @@ async def get_duplicate_fields_v2():
         {
             "$match": {
                 "indicator": "contacts",
-                "merchantId": "34137234-52fe-430c-a97d-df3e16525e71",
+                # "merchantId": "34137234-52fe-430c-a97d-df3e16525e71",
                 "status": "active"
             }
         },
