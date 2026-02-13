@@ -1,0 +1,12 @@
+frontend/
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.git
+*.db
+*.sqlite3
+*.log
+*.csv
+*.xlsx
