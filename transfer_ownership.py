@@ -146,7 +146,7 @@ async def transfer_ownership(prop_db):
 
         user = await users_col.find_one(
             {"firebaseId": prev_owner},
-            {"displayName": 1, "email": 1}
+            {"displayName": 1, "email": 1, "contact.phone": 1}
         )
 
         if not user:
@@ -158,8 +158,9 @@ async def transfer_ownership(prop_db):
 
         name = user.get("displayName", "Unknown")
         email = user.get("email", "unknown@email")
+        phone = user.get("contact", {}).get("phone", "No phone")
 
-        prefix = f"{name} ({email}) wrote:\n\n"
+        prefix = f"{name} ({email}, {phone}) wrote:\n\n"
 
         old_text = (
             doc.get("data", {})
