@@ -8,6 +8,7 @@ import re
 import smtplib
 import traceback
 import uuid
+import numbers
 from collections import defaultdict
 from datetime import datetime
 from email.message import EmailMessage
@@ -2701,6 +2702,149 @@ async def update_activity_summary_status(summary_id: str, payload: dict):
     )
     return {"success": True}
 
+@fastapi_app.post("/contacts/merge")
+async def merge_contacts(payload: dict):
+    """
+    Merge selected safe fields from source contact into target contact using `pid`.
+
+    Rules:
+    - Only copy whitelisted fields
+    - Support string and numeric values
+    - Skip dropdown/list/object fields
+    - Always wrap copied value in [[copied value]]
+    - Append if target already has value
+    - Create field if it doesn't exist
+    - Prevent duplicate copies
+    """
+
+    try:
+        source_pid = payload.get("sourcePid")
+        target_pid = payload.get("targetPid")
+
+        if not source_pid or not target_pid:
+            return {"error": "sourcePid and targetPid are required"}
+
+        # -------------------------------------
+        # Convert PIDs to float for exact match
+        # -------------------------------------
+        try:
+            source_pid = float(source_pid)
+            target_pid = float(target_pid)
+        except (TypeError, ValueError):
+            return {"error": "sourcePid and targetPid must be numeric"}
+
+        contacts_col = prop_db.formdatas
+
+        # -------------------------------------
+        # Whitelisted fields only
+        # -------------------------------------
+        ALLOWED_FIELDS = [
+            "field-1741774547654-ngd30kdcz",
+            "field-1741774690043-v7jylsjj2",
+            "field-1741774642959-g8l3j9yme",
+            "field-1751377453325-eif6cg1yp",
+            "field-1741778098761-w10f6zg6y",
+            "field-1745914503153-73tyam06q",
+            "field-1751377709092-a44a6m9px",
+            "field-1751377734726-f0hlm1tkr",
+            "field-1760945872507-tomtkn6yb",
+            "field-1768399734695-hz3nq7elt",
+            "field-1745915499881-67etnrprz",
+            "field-1762246758924-y1cx4g60z",
+            "field-1762246766511-7vinotanl",
+            "field-1762246773109-0r5kzsu3d",
+            "field-1741778662831-kkrtmk0rq",
+            "field-1741778693472-wpdiqsbbm",
+            "field-1755756234023-phau9a42d",
+            "field-1741778757278-vf6d9ep1y",
+            "field-1741778789938-qll8v614c",
+        ]
+
+        # -------------------------------------
+        # Fetch source and target contacts
+        # -------------------------------------
+        source_contact = await contacts_col.find_one({"pid": source_pid})
+        target_contact = await contacts_col.find_one({"pid": target_pid})
+
+        if not source_contact:
+            return {"error": "Source contact not found"}
+
+        if not target_contact:
+            return {"error": "Target contact not found"}
+
+        source_data = source_contact.get("data", {})
+        target_data = target_contact.get("data", {})
+
+        updated_fields = []
+
+        # -------------------------------------
+        # Merge logic
+        # -------------------------------------
+        for field in ALLOWED_FIELDS:
+            source_value = source_data.get(field)
+
+            if source_value is None:
+                continue
+
+            # Allow string or any numeric type
+            if not isinstance(source_value, (str, numbers.Number)):
+                continue
+
+            source_value = str(source_value)
+
+            target_value = target_data.get(field, None)
+
+            # Field does not exist OR empty → create with [[value]]
+            if target_value is None or target_value == "":
+                target_data[field] = f"[[{source_value}]]"
+                updated_fields.append(field)
+                continue
+
+            target_value = str(target_value)
+
+            # Prevent duplicate copy
+            if f"[[{source_value}]]" in target_value:
+                continue
+
+            # Append copied value
+            target_data[field] = f"{target_value} [[{source_value}]]"
+            updated_fields.append(field)
+
+        # -------------------------------------
+        # Update target contact in MongoDB
+        # -------------------------------------
+        result = await contacts_col.update_one(
+            {"pid": target_pid},
+            {
+                "$set": {
+                    "data": target_data,
+                    "metadata.updatedAt": datetime.utcnow()
+                }
+            }
+        )
+
+        if result.modified_count > 0:
+            name_field = "field-1741774547654-ngd30kdcz"
+            source_name_value = source_data.get(name_field)
+            if source_name_value and not str(source_name_value).startswith("[[OLD]]"):
+                source_data[name_field] = f"[[OLD]] {source_name_value}"
+                await contacts_col.update_one(
+                    {"pid": source_pid},
+                    {"$set": {"data": source_data, "metadata.updatedAt": datetime.utcnow()}}
+                )
+
+        return {
+            "message": "Contacts merged successfully",
+            "sourcePid": source_pid,
+            "targetPid": target_pid,
+            "modifiedCount": result.modified_count,
+            "updatedFieldsCount": len(updated_fields),
+            "updatedFields": updated_fields
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
 
 def send_email(to: str, subject: str, body: str):
     """

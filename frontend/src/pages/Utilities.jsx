@@ -10,6 +10,7 @@ import ManageCashflows from "./ManageCashflows"
 import AddContacts from "./AddContacts"
 import GenerateActivitySummaries from "./GenerateActivitySummaries";
 import PropertyActivitySummaries from "./PropertyActivitySummaries"
+import MergeContacts from "./MergeContacts"
 
 export default function Utilities() {
   return (
@@ -37,6 +38,7 @@ export default function Utilities() {
         <PropertyActivitySummaries />
         <ManageTimetables />
         <ManageCashflows />
+        <MergeContacts />
       </div>
     </div>
   );

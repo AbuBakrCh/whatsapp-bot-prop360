@@ -240,3 +240,13 @@ export async function deleteCashflows(payload) {
     throw err;
   }
 }
+
+export async function mergeContacts(payload) {
+  try {
+    const response = await axios.post(`${BASE}/contacts/merge`, payload);
+    return response.data;
+  } catch (err) {
+    console.error("Error merging contacts:", err);
+    throw err;
+  }
+}
