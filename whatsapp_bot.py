@@ -349,8 +349,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-#df = load_dataset_from_google_sheet(SHEET_ID)
-#embeddings, texts = build_index(df)
+df = load_dataset_from_google_sheet(SHEET_ID)
+embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -2895,6 +2895,17 @@ async def merge_contacts(payload: dict):
                         }
                     }
                 )
+
+            comments_col = prop_db.comments
+            await comments_col.update_many(
+                {"formId": str(source_contact["_id"])},
+                {
+                    "$set": {
+                        "formId": str(target_contact["_id"]),
+                        "metadata.updatedAt": datetime.utcnow()
+                    }
+                }
+            )
 
         return {
             "message": "Contacts merged successfully",
