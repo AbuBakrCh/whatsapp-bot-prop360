@@ -349,8 +349,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#df = load_dataset_from_google_sheet(SHEET_ID)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -2759,6 +2759,7 @@ async def merge_contacts(payload: dict):
             "field-1741778757278-vf6d9ep1y",
             "field-1741778789938-qll8v614c",
         ]
+        NAME_FIELD = "field-1741774547654-ngd30kdcz"
 
         # -------------------------------------
         # Fetch source and target contacts
@@ -2774,6 +2775,7 @@ async def merge_contacts(payload: dict):
 
         source_data = source_contact.get("data", {})
         target_data = target_contact.get("data", {})
+        target_name = str(target_data.get(NAME_FIELD))
 
         updated_fields = []
 
@@ -2831,6 +2833,67 @@ async def merge_contacts(payload: dict):
                 await contacts_col.update_one(
                     {"pid": source_pid},
                     {"$set": {"data": source_data, "metadata.updatedAt": datetime.utcnow()}}
+                )
+
+            # ---------------------------------
+            # Update activities
+            # ---------------------------------
+            ACTIVITY_FIELDS = [
+                "field-1760213170764-fhjgcg5u0",
+                "field-1762112354057-0rwwvsbo0",
+                "field-1762112414711-wp3hdmt1n",
+                "field-1764147273289-bqudbub97",
+                "field-1764147276663-da6q4ymmr",
+                "field-1764147278883-5oxys6rmc",
+            ]
+            source_pid_int = int(source_pid)
+            target_pid_int = int(target_pid)
+
+            query = {
+                "indicator": "custom-wyey07pb7",
+                "$or": [
+                    {f"data.{field}": {"$regex": f"\\|{source_pid_int}$"}}
+                    for field in ACTIVITY_FIELDS
+                ]
+            }
+
+            activities = contacts_col.find(query)
+
+            async for activity in activities:
+
+                activity_data = activity.get("data", {})
+
+                # Skip if target already exists
+                already_exists = any(
+                    str(activity_data.get(field, "")).endswith(f"|{target_pid_int}")
+                    for field in ACTIVITY_FIELDS
+                )
+
+                if already_exists:
+                    continue
+
+                # Find empty field
+                empty_field = None
+
+                for field in ACTIVITY_FIELDS:
+                    if not activity_data.get(field):
+                        empty_field = field
+                        break
+
+                if not empty_field:
+                    continue
+
+                # Insert target activity
+                activity_data[empty_field] = f"{target_name}|{target_pid_int}"
+
+                await contacts_col.update_one(
+                    {"_id": activity["_id"]},
+                    {
+                        "$set": {
+                            "data": activity_data,
+                            "metadata.updatedAt": datetime.utcnow()
+                        }
+                    }
                 )
 
         return {
