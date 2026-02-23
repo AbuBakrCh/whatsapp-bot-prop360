@@ -2,13 +2,13 @@ import asyncio
 import csv
 import io
 import mimetypes
+import numbers
 import os
 import random
 import re
 import smtplib
 import traceback
 import uuid
-import numbers
 from collections import defaultdict
 from datetime import datetime
 from email.message import EmailMessage
@@ -34,7 +34,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from send_followup_email import start_followup_email_scheduler, send_followup_emails
+from daily_activity_emails import start_daily_activity_emails_scheduler
+from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
 
@@ -301,8 +302,6 @@ def generate_rag_response(user_query, combined_answer, chat_history):
         print(f"⚠️ Error during model completion: {str(e)}")
         traceback.print_exc()
         return f"⚠️ Error: {str(e)}", combined_answer
-
-
 
 def generate_text_with_model(input_text, model_name=None, temperature=0.5):
     """
@@ -626,6 +625,7 @@ async def ensure_indexes():
     start_tax_emails_scheduler(prop_db)
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
+    start_daily_activity_emails_scheduler(prop_db, db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")

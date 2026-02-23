@@ -6,7 +6,6 @@ from email.message import EmailMessage
 import asyncio
 import random
 from apscheduler.triggers.cron import CronTrigger
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 scheduler = AsyncIOScheduler()
