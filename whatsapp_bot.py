@@ -1337,6 +1337,8 @@ async def activity_client_messages(
         results = []
 
         async for doc in cursor:
+            raw_description = doc.get("activityDescription")
+            activity_description = clean_activity_description(raw_description)
 
             # AI receives placeholders instead of real data
             openai_prompt = (
@@ -1344,14 +1346,29 @@ async def activity_client_messages(
                 f"{prompt}\n\n"
 
                 "WORK DONE RELATED TO PROPERTY:\n"
-                f"{doc.get('activityDescription')}\n\n"
+                f"{activity_description}\n\n"
 
-                "PLACEHOLDER RULES (VERY IMPORTANT):\n"
-                "- Use {{client_name}} as the placeholder for the client's name.\n"
-                "- Use {{property_name}} as the placeholder for the property's name.\n"
-                "- Do NOT replace these placeholders; keep them exactly as {{client_name}} and {{property_name}}.\n"
-                "- Mention {{client_name}} when referring to the client.\n"
-                "- Mention {{property_name}} when referring to the property.\n\n"
+                "STRICT FACTUAL CONSTRAINTS (HIGHEST PRIORITY):\n"
+                "- Use ONLY the information explicitly provided in WORK DONE RELATED TO PROPERTY.\n"
+                "- Do NOT add, assume, infer, or invent any additional information.\n"
+                "- Do NOT add address, dates, explanations, or context unless explicitly stated.\n"
+                "- Do NOT introduce new labels like 'Address:', 'Location:', etc.\n"
+                "- If information is missing, do NOT fill it.\n\n"
+
+                "- USE PLACEHOLDERS ABSOLUTELY:\n"
+                "  * Always write {{client_name}} when referring to the client.\n"
+                "  * Always write {{property_name}} when referring to the property.\n"
+                "  * DO NOT EVER replace these placeholders with real names from the activity description.\n"
+                "  * Ignore any names, emails, or phone numbers in the activity description.\n"
+                "  * The message must start exactly with:\n\n"
+                "      Merhaba {{client_name}},\n"
+                "      {{property_name}} ile ilgili sizi bilgilendirmek isterim.\n\n"
+
+                "- PARAGRAPH & LINE BREAK RULES (VERY IMPORTANT):\n"
+                "  * After the opening line, each piece of information must start on a new line or paragraph.\n"
+                "  * Maintain clear separation between different points.\n"
+                "  * The closing and contact information must also be on a separate paragraph.\n"
+                "  * Avoid running multiple ideas in a single line.\n\n"
 
                 "STYLE & OUTPUT REQUIREMENTS:\n"
                 "- Follow all formatting and writing requirements from MAIN INSTRUCTIONS above.\n"
@@ -2966,6 +2983,20 @@ async def send_whatsapp_message(to, message):
         resp = await client.post(url, headers=headers, json=payload)
         print("📤 send_whatsapp_message response:", resp.status_code, resp.text)
         return resp
+
+def clean_activity_description(text: str) -> str:
+    if not text:
+        return text
+
+    # Remove leading "Name (email, phone) wrote:" including multiline safety
+    cleaned = re.sub(
+        r"^[^\n]*?\([^)]*\)\s*wrote:\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    return cleaned.strip()
 
 
 # --- Socket.IO event handlers (optional) ---
