@@ -27,6 +27,7 @@ if not logger.handlers:
 
 
 async def send_daily_activity_emails(prop_db, db):
+    logger.info("Starting send_daily_activity_emails task")
     try:
         forms_col = prop_db.formdatas
         email_log = db.email_log
@@ -105,7 +106,7 @@ async def send_daily_activity_emails(prop_db, db):
 
         cursor = forms_col.aggregate(pipeline)
         results = await cursor.to_list(length=None)
-
+        logger.info("send_daily_activity_emails task results size: %d", len(results))
         for res in results:
             client = res["_id"]
 
@@ -228,7 +229,7 @@ def start_daily_activity_emails_scheduler(prop_db, db):
         send_daily_activity_emails,
         CronTrigger(
             hour=9,
-            minute=0,
+            minute=45,
             timezone=pytz.timezone("Europe/Athens")
         ),
         args=[prop_db, db],
