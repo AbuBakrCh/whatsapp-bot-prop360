@@ -59,6 +59,18 @@ async def send_daily_activity_emails(prop_db, db):
                     "metadata.createdAt": {
                         "$gte": start_utc,
                         "$lte": end_utc
+                    },
+                    "$expr": {
+                        "$ne": [
+                            {
+                                "$toLower": {
+                                    "$trim": {
+                                        "input": "$data.field-1763667758197-dg5h28foy"
+                                    }
+                                }
+                            },
+                            "will not be sent"
+                        ]
                     }
                 }
             },
@@ -168,7 +180,7 @@ async def send_daily_activity_emails(prop_db, db):
             - Ensure it is fully HTML, suitable to be sent via email clients.
             - DO NOT include any markdown, code fences, or triple backticks. Only generate HTML content.
             
-            Translate the entire email into Turkish.
+            Translate the entire email into Turkish. No matter the source language, final email should be in Turkish. [IMPORTANT]
 
             5) Closing:
             İlginiz için teşekkür ederim.
