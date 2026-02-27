@@ -31,7 +31,7 @@ def start_tax_emails_scheduler(prop_db):
         max_instances=1,
         misfire_grace_time=3600,
     )
-    scheduler.start()
+    # scheduler.start()
 
 async def send_tax_emails_to_contacts(prop_db):
     email_delay_seconds = 30
