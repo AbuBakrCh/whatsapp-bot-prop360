@@ -190,7 +190,33 @@ async def send_daily_activity_emails(prop_db, db):
             Activities:
             {activities_text}
             """
+
+            DISCLAIMER_HTML = """
+            <div style="margin-top:40px; padding-top:15px; border-top:1px solid #ddd; 
+                        font-size:12px; color:#777; line-height:1.6;">
+                Bu ileti yalnızca bilgilendirme amacıyla hazırlanmıştır. İçeriğin hazırlanmasında 
+                makul özen gösterilmiş olmakla birlikte, doğruluğu, eksiksizliği veya güvenilirliği 
+                konusunda açık ya da zımni herhangi bir beyan veya garanti verilmemektedir. 
+                Herhangi bir mali tutar, tarih veya detay bağımsız olarak teyit edilmelidir. 
+                Herhangi bir tereddüt veya tutarsızlık durumunda, herhangi bir işlem yapmadan 
+                önce lütfen bilgileri Kostas ile doğrulayınız. Bu e-postaya dayanılarak alınan 
+                kararlar sonucunda doğrudan veya dolaylı olarak ortaya çıkabilecek herhangi 
+                bir kayıp, zarar veya sonuçtan gönderici sorumlu tutulamaz.
+            </div>
+            """
+
             summary_text = generate_text_with_model(prompt)
+
+            if summary_text:
+                # If model already returned full HTML with </body>, inject before closing tag
+                if "</body>" in summary_text:
+                    summary_text = summary_text.replace(
+                        "</body>",
+                        DISCLAIMER_HTML + "\n</body>"
+                    )
+                else:
+                    # Otherwise just append
+                    summary_text = summary_text + DISCLAIMER_HTML
 
             # Fetch client email
             client_email = None
