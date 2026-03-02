@@ -42,6 +42,7 @@ async def transfer_ownership(prop_db):
     - Sets new owner
     - Sets new merchantId
     - Duplicate executions are safe
+    - Docs starting with api-token- are only shared, not ownership changed
     """
     if not _is_job_enabled():
         logger.info("transfer_ownership is disabled. Skipping execution.")
@@ -70,6 +71,40 @@ async def transfer_ownership(prop_db):
     formdatas_col = prop_db.formdatas
     users_col = prop_db.users
 
+    # --------------------------------------------------
+    # Step 1a: Share API-token docs only
+    # --------------------------------------------------
+    api_docs_result = await formdatas_col.update_many(
+        {
+            "metadata.createdAt": {"$gt": CUTOFF_DATE},
+            "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7"]},
+            "metadata.createdBy": {"$regex": "^api-token-"},
+            "metadata.apiShared": {"$ne": True},
+            "metadata.ownershipTransferred": {"$ne": True}
+        },
+        [
+            {
+                "$set": {
+                    "sharedWithMerchants": {
+                        "$setUnion": [
+                            {"$ifNull": ["$sharedWithMerchants", []]},
+                            ["$merchantId"]
+                        ]
+                    },
+                    "metadata.apiShared": True
+                }
+            }
+        ]
+    )
+    logger.info(
+        "API-token docs shared | matched=%s | modified=%s",
+        api_docs_result.matched_count,
+        api_docs_result.modified_count,
+    )
+
+    # --------------------------------------------------
+    # Step 1b: Full ownership transfer for non-API docs
+    # --------------------------------------------------
     update_pipeline = [
         {
             "$set": {
