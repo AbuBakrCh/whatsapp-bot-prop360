@@ -107,11 +107,17 @@ async def transfer_ownership(prop_db):
 
     result = await formdatas_col.update_many(
         {
-            "metadata.createdAt": {"$gt": CUTOFF_DATE},
-            "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7"]},
-            "$or": [
-                {"metadata.ownershipTransferred": {"$exists": False}},
-                {"metadata.ownershipTransferred": False}
+            "$and": [
+                {"metadata.createdAt": {"$gt": CUTOFF_DATE}},
+                {"indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7"]}},
+                {"$or": [
+                    {"metadata.createdBy": {"$not": {"$regex": "^api-token-"}}},
+                    {"metadata.createdBy": {"$exists": False}}
+                ]},
+                {"$or": [
+                    {"metadata.ownershipTransferred": {"$exists": False}},
+                    {"metadata.ownershipTransferred": False}
+                ]}
             ]
         },
         update_pipeline
