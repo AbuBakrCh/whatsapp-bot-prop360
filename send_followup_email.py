@@ -42,7 +42,7 @@ async def send_followup_emails(prop_db):
         "indicator": "custom-wyey07pb7",
         "data.field-1768290921328-dwajjl0vo": "Yes",
         "data.field-1761124691669-lxtkrz3jv": "In Progress",
-        "data.field-1768290928665-jgy6150eb": {"$lte": now_iso}
+        "data.field-1768290928665-jgy6150eb": {"$lte": now_iso} #triggering date; once this date arrives, we will send followup
     }
 
     cursor = formdatas_col.find(query)
@@ -52,9 +52,11 @@ async def send_followup_emails(prop_db):
     async for doc in cursor:
         data = doc.get("data", {})
 
-        max_followups = int(
-            data.get("field-1770024881104-0f0xns6rp", 0) or 0
-        )
+        value = data.get("field-1770024881104-0f0xns6rp")
+        if value is None or value == "":
+            max_followups = 10 ** 9
+        else:
+            max_followups = int(value)
 
         sent_count = int(doc.get("followupEmailSentCount", 0))
 
