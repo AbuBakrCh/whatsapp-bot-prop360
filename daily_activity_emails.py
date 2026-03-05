@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from typing import Any
 from zoneinfo import ZoneInfo
+import asyncio
+import traceback
 
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -116,10 +118,8 @@ async def send_daily_activity_emails(prop_db, db):
             }
         ]
 
-        cursor = forms_col.aggregate(pipeline)
-        results = await cursor.to_list(length=None)
-        logger.info("send_daily_activity_emails task results size: %d", len(results))
-        for res in results:
+        # Use async iteration to prevent cursor from timing out
+        async for res in forms_col.aggregate(pipeline):
             client = res["_id"]
 
             existing = await email_log.find_one({
@@ -191,6 +191,8 @@ async def send_daily_activity_emails(prop_db, db):
             {activities_text}
             """
 
+            summary_text = await asyncio.to_thread(generate_text_with_model, prompt)
+
             DISCLAIMER_HTML = """
             <div style="margin-top:40px; padding-top:15px; border-top:1px solid #ddd; 
                         font-size:12px; color:#777; line-height:1.6;">
@@ -204,8 +206,6 @@ async def send_daily_activity_emails(prop_db, db):
                 bir kayıp, zarar veya sonuçtan gönderici sorumlu tutulamaz.
             </div>
             """
-
-            summary_text = generate_text_with_model(prompt)
 
             if summary_text:
                 # If model already returned full HTML with </body>, inject before closing tag
@@ -230,8 +230,10 @@ async def send_daily_activity_emails(prop_db, db):
                     client_email = contact_doc.get(
                         "data", {}
                     ).get("field-1741774690043-v7jylsjj2")
-            except:
-                pass
+            except Exception as e:
+                logger.warning("Failed to fetch client email for %s: %s", client, e)
+                traceback.print_exc()
+                continue
 
             if not client_email:
                 continue
@@ -258,9 +260,10 @@ async def send_daily_activity_emails(prop_db, db):
                 },
                 upsert=True
             )
-
+        logger.info("send_daily_activity_emails task completed successfully")
     except Exception as e:
         print("Job failed:", e)
+        traceback.print_exc()
 
 def start_daily_activity_emails_scheduler(prop_db, db):
     scheduler.add_job(
