@@ -238,11 +238,17 @@ async def send_daily_activity_emails(prop_db, db):
             if not client_email:
                 continue
 
-            send_email_v2(
-                to=client_email,
-                subject="Dünkü mülk faaliyetlerinin özeti",
-                body=summary_text
-            )
+            try:
+                await asyncio.to_thread(
+                    send_email_v2,
+                    to=client_email,
+                    subject="Dünkü mülk faaliyetlerinin özeti",
+                    body=summary_text
+                )
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Failed to send email to {client_email}: {e}")
+                continue
 
             await email_log.update_one(
                 {
@@ -270,7 +276,7 @@ def start_daily_activity_emails_scheduler(prop_db, db):
         send_daily_activity_emails,
         CronTrigger(
             hour=9,
-            minute=22,
+            minute=0,
             timezone=pytz.timezone("Europe/Athens")
         ),
         args=[prop_db, db],
@@ -306,6 +312,11 @@ def send_email_v2(to: str, subject: str, body: str, cc: list[str] | None = None)
     else:
         msg.set_content(body)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(email_address, email_app_password)
-        smtp.send_message(msg)
+    # Use a context manager to ensure the connection is closed properly every time
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+            smtp.login(email_address, email_app_password)
+            smtp.send_message(msg)
+    except smtplib.SMTPException as e:
+        logger.error(f"SMTP error occurred: {e}")
+        raise
