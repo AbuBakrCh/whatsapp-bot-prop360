@@ -148,7 +148,7 @@ async def send_daily_activity_emails(prop_db, db):
             activity_lines = []
             for prop, descs in property_groups.items():
                 desc_text = "\n- ".join(descs)
-                activity_lines.append(f"Property: {prop}\n- {desc_text}")
+                activity_lines.append(f"#####Property:##### {prop}\n- {desc_text}")
 
             activities_text = "\n\n".join(activity_lines)
 
@@ -166,6 +166,8 @@ async def send_daily_activity_emails(prop_db, db):
 
             3) Activity summary grouped by property:
             - Group activities under each property.
+            - Do not treat property names inside the activity description as separate properties. Only use the property names provided in the #####Property:##### headings.
+            - Do not create any other headings or sections, even if the activity text mentions other property names, invoices, or identifiers. 
             - Rewrite each activity in a professional, neutral tone.
             - **Remove the actor/person from the activity entirely**; focus only on what was done.
             - Convert statements like "I did X" or "I will do Y" into "X was performed" or "Y is scheduled".
