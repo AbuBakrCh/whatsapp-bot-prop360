@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from daily_activity_emails import start_daily_activity_emails_scheduler
+from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
@@ -2718,6 +2718,40 @@ async def update_activity_summary_status(summary_id: str, payload: dict):
         {"$set": {"status": new_status, "updatedAt": datetime.utcnow()}}
     )
     return {"success": True}
+
+@fastapi_app.post("/jobs/daily-activity")
+async def control_daily_activity_job(action: str):
+    if action not in ["start", "stop"]:
+        return {"error": "action must be start or stop"}
+
+    doc = await db.job_control.find_one({"_id": "daily_activity_email_job"})
+    running = doc.get("running") if doc else False
+
+    if action == "start":
+        if running:
+            return {"message": "Job already running"}
+
+        # set status to start
+        await db.job_control.update_one(
+            {"_id": "daily_activity_email_job"},
+            {"$set": {"status": "start"}},
+            upsert=True
+        )
+
+        # start job if not already running
+        if not running:
+            asyncio.create_task(send_daily_activity_emails(prop_db, db))
+
+        return {"message": "Job started"}
+
+    if action == "stop":
+        # set status to stop
+        await db.job_control.update_one(
+            {"_id": "daily_activity_email_job"},
+            {"$set": {"status": "stop"}},
+            upsert=True
+        )
+        return {"message": "Stop signal sent"}
 
 @fastapi_app.post("/contacts/merge")
 async def merge_contacts(payload: dict):

@@ -30,6 +30,25 @@ if not logger.handlers:
 
 async def send_daily_activity_emails(prop_db, db):
     logger.info("Starting send_daily_activity_emails task")
+
+    await db.job_control.update_one(
+        {"_id": "daily_activity_email_job"},
+        {"$setOnInsert": {"status": "stop", "running": False}},
+        upsert=True
+    )
+
+    result = await db.job_control.update_one(
+        {"_id": "daily_activity_email_job", "running": {"$ne": True}},
+        {"$set": {"running": True}}
+    )
+
+    if result.modified_count == 0:
+        logger.info("Job already running elsewhere, skipping")
+        return
+
+    # Track all active threads to wait for them on stop
+    running_threads = []
+
     try:
         forms_col = prop_db.formdatas
         email_log = db.email_log
@@ -120,6 +139,14 @@ async def send_daily_activity_emails(prop_db, db):
 
         # Use async iteration to prevent cursor from timing out
         async for res in forms_col.aggregate(pipeline):
+            control = await db.job_control.find_one({"_id": "daily_activity_email_job"})
+            if control.get("status") == "stop":
+                logger.info("Stop signal received. Waiting for active threads to finish...")
+                if running_threads:
+                    await asyncio.gather(*running_threads, return_exceptions=True)
+                logger.info("All active threads finished. Exiting job mid-run.")
+                break
+
             client = res["_id"]
 
             existing = await email_log.find_one({
@@ -193,7 +220,17 @@ async def send_daily_activity_emails(prop_db, db):
             {activities_text}
             """
 
-            summary_text = await asyncio.to_thread(generate_text_with_model, prompt)
+            # Run AI generation in a tracked thread
+            async def run_ai_task():
+                return await asyncio.to_thread(generate_text_with_model, prompt)
+
+            ai_future = asyncio.create_task(run_ai_task())
+            running_threads.append(ai_future)
+
+            try:
+                summary_text = await ai_future
+            finally:
+                running_threads.remove(ai_future)
 
             DISCLAIMER_HTML = """
             <div style="margin-top:40px; padding-top:15px; border-top:1px solid #ddd; 
@@ -241,17 +278,19 @@ async def send_daily_activity_emails(prop_db, db):
                 logger.warning("Skipping as client email not found, client: %s", client)
                 continue
 
+            # Send email in a tracked thread
+            async def run_email_task():
+                await asyncio.to_thread(send_email_v2,
+                                        to=client_email,
+                                        subject="Dünkü mülk faaliyetlerinin özeti",
+                                        body=summary_text)
+            email_future = asyncio.create_task(run_email_task())
+            running_threads.append(email_future)
+
             try:
-                await asyncio.to_thread(
-                    send_email_v2,
-                    to=client_email,
-                    subject="Dünkü mülk faaliyetlerinin özeti",
-                    body=summary_text
-                )
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Failed to send email to {client_email}: {e}")
-                continue
+                await email_future
+            finally:
+                running_threads.remove(email_future)
 
             await email_log.update_one(
                 {
@@ -273,6 +312,16 @@ async def send_daily_activity_emails(prop_db, db):
     except Exception as e:
         print("Job failed:", e)
         traceback.print_exc()
+    finally:
+        # Wait for any remaining threads (safety)
+        if running_threads:
+            await asyncio.gather(*running_threads, return_exceptions=True)
+
+        await db.job_control.update_one(
+            {"_id": "daily_activity_email_job"},
+            {"$set": {"running": False}}
+        )
+        logger.info("Job running flag cleared")
 
 def start_daily_activity_emails_scheduler(prop_db, db):
     scheduler.add_job(

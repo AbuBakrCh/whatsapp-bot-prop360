@@ -11,6 +11,7 @@ import AddContacts from "./AddContacts"
 import GenerateActivitySummaries from "./GenerateActivitySummaries";
 import PropertyActivitySummaries from "./PropertyActivitySummaries"
 import MergeContacts from "./MergeContacts"
+import JobControl from "./JobControl";
 
 export default function Utilities() {
   return (
@@ -39,6 +40,8 @@ export default function Utilities() {
         <ManageTimetables />
         <ManageCashflows />
         <MergeContacts />
+        <JobControl jobId="daily-activity" jobName="Daily Activity Emails" />
+
       </div>
     </div>
   );

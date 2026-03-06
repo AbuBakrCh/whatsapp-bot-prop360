@@ -250,3 +250,15 @@ export async function mergeContacts(payload) {
     throw err;
   }
 }
+
+export async function controlJob(jobId, action) {
+  try {
+    const res = await axios.post(`${BASE}/jobs/${jobId}`, null, {
+      params: { action },
+    });
+    return res.data;
+  } catch (err) {
+    console.error(`Failed to ${action} job ${jobId}:`, err);
+    return { error: err.response?.data?.error || "Failed to control job" };
+  }
+}
