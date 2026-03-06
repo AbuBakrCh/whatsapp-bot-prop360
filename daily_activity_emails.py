@@ -270,7 +270,7 @@ def start_daily_activity_emails_scheduler(prop_db, db):
         send_daily_activity_emails,
         CronTrigger(
             hour=9,
-            minute=0,
+            minute=15,
             timezone=pytz.timezone("Europe/Athens")
         ),
         args=[prop_db, db],
