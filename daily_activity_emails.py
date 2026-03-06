@@ -236,6 +236,7 @@ async def send_daily_activity_emails(prop_db, db):
                 continue
 
             if not client_email:
+                logger.warning("Skipping as client email not found, client: %s", client)
                 continue
 
             try:
