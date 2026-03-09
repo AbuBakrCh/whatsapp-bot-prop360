@@ -52,6 +52,8 @@ async def send_followup_emails(prop_db):
     async for doc in cursor:
         data = doc.get("data", {})
 
+        print('Data fields for followup: ' + str(data))
+
         value = data.get("field-1770024881104-0f0xns6rp")
         if value is None or value == "":
             max_followups = 10 ** 9
