@@ -92,7 +92,7 @@ async def send_followup_emails(prop_db):
             .strip()
         )
 
-        subject = "Action Required: Pending Activity"
+        subject = "Action Required - Pending Activity"
 
         body = f"""
         <p>Hello,</p>
