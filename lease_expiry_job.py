@@ -82,7 +82,7 @@ async def send_email(property_title_full, property_title, property_url, lease_en
         send_email_v2,
         [
             "ka@investgreece.gr",
-            "property@investgreece.gr"
+            "info@investgreece.gr"
         ],
         subject,
         body,
