@@ -36,6 +36,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from lease_expiry_job import start_lease_expiry_scheduler
+from passport_expirt_job import start_passport_expiry_scheduler
 from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
@@ -628,6 +629,7 @@ async def ensure_indexes():
     start_followup_email_scheduler(prop_db)
     start_daily_activity_emails_scheduler(prop_db, db)
     start_lease_expiry_scheduler(prop_db)
+    start_passport_expiry_scheduler(prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
