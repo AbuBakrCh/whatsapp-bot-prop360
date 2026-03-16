@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
+from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
 from passport_expiry_job import start_passport_expiry_scheduler
 from send_followup_email import start_followup_email_scheduler
@@ -630,6 +631,7 @@ async def ensure_indexes():
     start_daily_activity_emails_scheduler(prop_db, db)
     start_lease_expiry_scheduler(prop_db)
     start_passport_expiry_scheduler(prop_db)
+    start_ide_expiry_scheduler(prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
