@@ -629,9 +629,9 @@ async def ensure_indexes():
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
     start_daily_activity_emails_scheduler(prop_db, db)
-    start_lease_expiry_scheduler(prop_db)
-    start_passport_expiry_scheduler(prop_db)
-    start_ide_expiry_scheduler(prop_db)
+    start_lease_expiry_scheduler(db, prop_db)
+    start_passport_expiry_scheduler(db, prop_db)
+    start_ide_expiry_scheduler(db, prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
@@ -2976,6 +2976,50 @@ async def merge_contacts(payload: dict):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+
+@fastapi_app.post("/job-control/expiry/email-recipients")
+async def upsert_job_control(payload: dict = Body(...)):
+    job_id = payload.get("job_id")
+    emails_str = payload.get("emails")
+
+    if not job_id or not emails_str:
+        return {"success": False, "message": "job_id and emails are required"}
+
+    # Convert comma-separated string to list and clean spaces
+    email_list = [email.strip() for email in emails_str.split(",") if email.strip()]
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {
+            "$set": {
+                "recipients": email_list,
+                "updatedAt": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+    return {"success": True}
+
+@fastapi_app.get("/job-control/expiry")
+async def get_expiry_job_controls():
+    # Only include expiry jobs
+    expiry_job_ids = ["ide_expiry_job", "lease_expiry_job", "passport_expiry_job"]
+    cursor = db.job_control.find({"_id": {"$in": expiry_job_ids}})
+
+    jobs = []
+
+    async for doc in cursor:
+        jobs.append({
+            "job_id": doc.get("_id"),
+            "recipients": doc.get("recipients", [])
+        })
+
+    return {
+        "success": True,
+        "data": jobs
+    }
 
 def send_email(to: str, subject: str, body: str):
     """

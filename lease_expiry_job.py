@@ -29,7 +29,13 @@ LEASE_EXPIRY_DAYS = int(os.getenv("LEASE_EXPIRY_DAYS", "15"))
 def _is_job_enabled():
     return os.getenv("LEASE_EXPIRY_JOB_ENABLED", "true").lower() == "true"
 
-async def send_email(property_title_full, property_title, property_url, lease_end_date_utc):
+async def get_job_recipients(db, job_id: str):
+    doc = await db.job_control.find_one({"_id": job_id})
+    if not doc:
+        return []
+    return doc.get("recipients", [])
+
+async def send_email(db, property_title_full, property_title, property_url, lease_end_date_utc):
     """
     Sends lease expiry notification email
     lease_end_date_utc: datetime in UTC
@@ -68,11 +74,22 @@ async def send_email(property_title_full, property_title, property_url, lease_en
     </html>
     """
 
+    # Fetch recipients dynamically
+    recipients = await get_job_recipients(db, "lease_expiry_job")
+
+    # Fallback (recommended)
+    if not recipients:
+        logger.warning("No recipients found for lease_expiry_job, using fallback")
+        recipients = [
+            "ka@investgreece.gr",
+            "info@investgreece.gr"
+        ]
+
     logger.info(
-        "Sending lease expiry email | title=%s | expiry=%s | url=%s",
+        "Sending lease expiry email | title=%s | expiry=%s | recipients=%s",
         property_title,
         lease_end_greece,
-        property_url,
+        recipients,
     )
 
     loop = asyncio.get_running_loop()
@@ -80,17 +97,14 @@ async def send_email(property_title_full, property_title, property_url, lease_en
     await loop.run_in_executor(
         None,
         send_email_v2,
-        [
-            "ka@investgreece.gr",
-            "info@investgreece.gr"
-        ],
+        recipients,
         subject,
         body,
         None
     )
 
 
-async def lease_expiry_check(prop_db):
+async def lease_expiry_check(db, prop_db):
 
     if not _is_job_enabled():
         logger.info("Lease expiry job disabled")
@@ -147,7 +161,7 @@ async def lease_expiry_check(prop_db):
 
                 property_url = f"https://prop360.pro/dashboard/forms/properties/{property_id}"
 
-                await send_email(property_title_full, property_title, property_url, end_date)
+                await send_email(db, property_title_full, property_title, property_url, end_date)
 
                 await formdatas_col.update_one(
                     {"_id": property_id},
@@ -171,7 +185,7 @@ async def lease_expiry_check(prop_db):
     )
 
 
-def start_lease_expiry_scheduler(prop_db):
+def start_lease_expiry_scheduler(db, prop_db):
     """
     Starts follow-up email scheduler.
     Call this once during FastAPI startup.
@@ -183,7 +197,7 @@ def start_lease_expiry_scheduler(prop_db):
             minute=0,
             timezone=ZoneInfo("Europe/Athens")
         ),
-        args=[prop_db],
+        args=[db, prop_db],
         id="lease_expiry_check",
         replace_existing=True,
         max_instances=1,

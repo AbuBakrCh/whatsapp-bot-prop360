@@ -25,7 +25,14 @@ PASSPORT_FIELD = "field-1741779403411-cgccurwgk"
 PASSPORT_EXPIRY_DAYS = int(os.getenv("PASSPORT_EXPIRY_DAYS", "15"))  # configurable
 PASSPORT_JOB_ENABLED = "PASSPORT_EXPIRY_JOB_ENABLED"
 
-async def send_passport_email(person_name, person_url, passport_end_date_utc):
+async def get_job_recipients(db, job_id: str):
+    doc = await db.job_control.find_one({"_id": job_id})
+    if not doc:
+        return []
+    return doc.get("recipients", [])
+
+
+async def send_passport_email(db, person_name, person_url, passport_end_date_utc):
     """
     Sends passport expiry notification email
     passport_end_date_utc: datetime in UTC
@@ -62,28 +69,35 @@ async def send_passport_email(person_name, person_url, passport_end_date_utc):
     </html>
     """
 
+    # Fetch recipients from DB
+    recipients = await get_job_recipients(db, "passport_expiry_job")
+
+    # Optional fallback
+    if not recipients:
+        logger.warning("No recipients found in job_control, using fallback emails")
+        recipients = [
+            "ka@investgreece.gr",
+            "info@investgreece.gr"
+        ]
+
     logger.info(
-        "Sending passport expiry email | name=%s | expiry=%s | url=%s",
+        "Sending passport expiry email | name=%s | expiry=%s | recipients=%s",
         person_name,
         passport_end_greece,
-        person_url,
+        recipients,
     )
 
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
         None,
-        send_email_v2,
-        [
-            "ka@investgreece.gr",
-            "info@investgreece.gr"
-        ],
+        recipients,
         subject,
         body,
         None
     )
 
 
-async def passport_expiry_check(prop_db):
+async def passport_expiry_check(db, prop_db):
     if os.getenv(PASSPORT_JOB_ENABLED, "true").lower() != "true":
         logger.info("Passport expiry job disabled")
         return
@@ -124,7 +138,7 @@ async def passport_expiry_check(prop_db):
 
             person_url = f"https://prop360.pro/dashboard/forms/contacts/{person_id}"
 
-            await send_passport_email(person_name, person_url, passport_end_date)
+            await send_passport_email(db, person_name, person_url, passport_end_date)
 
             await formdatas_col.update_one(
                 {"_id": person_id},
@@ -147,7 +161,7 @@ async def passport_expiry_check(prop_db):
     )
 
 
-def start_passport_expiry_scheduler(prop_db):
+def start_passport_expiry_scheduler(db, prop_db):
     """
     Starts passport expiry email scheduler.
     Call this once during FastAPI startup.
@@ -159,7 +173,7 @@ def start_passport_expiry_scheduler(prop_db):
             minute=5,
             timezone=ZoneInfo("Europe/Athens")
         ),
-        args=[prop_db],
+        args=[db, prop_db],
         id="passport_expiry_check",
         replace_existing=True,
         max_instances=1,

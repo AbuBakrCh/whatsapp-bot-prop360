@@ -12,6 +12,7 @@ import GenerateActivitySummaries from "./GenerateActivitySummaries";
 import PropertyActivitySummaries from "./PropertyActivitySummaries"
 import MergeContacts from "./MergeContacts"
 import JobControl from "./JobControl";
+import ExpiryJobsControl from "./ExpiryJobsControl";
 
 export default function Utilities() {
   return (
@@ -41,7 +42,7 @@ export default function Utilities() {
         <ManageCashflows />
         <MergeContacts />
         <JobControl jobId="daily-activity" jobName="Daily Activity Emails" />
-
+        <ExpiryJobsControl />
       </div>
     </div>
   );

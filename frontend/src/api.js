@@ -262,3 +262,26 @@ export async function controlJob(jobId, action) {
     return { error: err.response?.data?.error || "Failed to control job" };
   }
 }
+
+export async function getExpiryJobControls() {
+  try {
+    const res = await axios.get(`${BASE}/job-control/expiry`);
+    return res.data;
+  } catch (err) {
+    console.error("Error fetching expiry job controls:", err);
+    throw err;
+  }
+}
+
+export async function upsertExpiryJobRecipients(jobId, emails) {
+  try {
+    const res = await axios.post(`${BASE}/job-control/expiry/email-recipients`, {
+      job_id: jobId,
+      emails,
+    });
+    return res.data;
+  } catch (err) {
+    console.error(`Error updating recipients for job ${jobId}:`, err);
+    throw err;
+  }
+}

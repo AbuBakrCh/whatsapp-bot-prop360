@@ -30,8 +30,13 @@ IDE_EXPIRY_DAYS = int(os.getenv("IDE_EXPIRY_DAYS", "15"))
 def _is_ide_job_enabled():
     return os.getenv("IDE_EXPIRY_JOB_ENABLED", "true").lower() == "true"
 
+async def get_job_recipients(db, job_id: str):
+    doc = await db.job_control.find_one({"_id": job_id})
+    if not doc:
+        return []
+    return doc.get("recipients", [])
 
-async def send_ide_email(title_full, title, record_url, ide_end_date_utc):
+async def send_ide_email(db, title_full, title, record_url, ide_end_date_utc):
     """
     Sends IDE expiry notification email
     ide_end_date_utc: datetime in UTC
@@ -69,11 +74,22 @@ async def send_ide_email(title_full, title, record_url, ide_end_date_utc):
     </html>
     """
 
+    #Fetch recipients dynamically
+    recipients = await get_job_recipients(db, "ide_expiry_job")
+
+    # Fallback (important for safety)
+    if not recipients:
+        logger.warning("No recipients found for ide_expiry_job, using fallback")
+        recipients = [
+            "ka@investgreece.gr",
+            "info@investgreece.gr"
+        ]
+
     logger.info(
-        "Sending IDE expiry email | title=%s | expiry=%s | url=%s",
+        "Sending IDE expiry email | title=%s | expiry=%s | recipients=%s",
         title,
         ide_end_greece,
-        record_url,
+        recipients,
     )
 
     loop = asyncio.get_running_loop()
@@ -81,17 +97,14 @@ async def send_ide_email(title_full, title, record_url, ide_end_date_utc):
     await loop.run_in_executor(
         None,
         send_email_v2,
-        [
-            "ka@investgreece.gr",
-            "info@investgreece.gr"
-        ],
+        recipients,
         subject,
         body,
         None
     )
 
 
-async def ide_expiry_check(prop_db):
+async def ide_expiry_check(db, prop_db):
 
     if not _is_ide_job_enabled():
         logger.info("IDE expiry job disabled")
@@ -156,7 +169,7 @@ async def ide_expiry_check(prop_db):
 
                 record_url = f"https://prop360.pro/dashboard/forms/properties/{record_id}"
 
-                await send_ide_email(title_full, title, record_url, end_date)
+                await send_ide_email(db, title_full, title, record_url, end_date)
 
                 await formdatas_col.update_one(
                     {"_id": record_id},
@@ -180,7 +193,7 @@ async def ide_expiry_check(prop_db):
     )
 
 
-def start_ide_expiry_scheduler(prop_db):
+def start_ide_expiry_scheduler(db, prop_db):
     """
     Starts IDE expiry email scheduler.
     Call this once during FastAPI startup.
@@ -193,7 +206,7 @@ def start_ide_expiry_scheduler(prop_db):
             minute=10,
             timezone=ZoneInfo("Europe/Athens")
         ),
-        args=[prop_db],
+        args=[db, prop_db],
         id="ide_expiry_check",
         replace_existing=True,
         max_instances=1,
