@@ -228,6 +228,80 @@ async def transfer_ownership(prop_db):
         updated_custom_docs
     )
 
+    # --------------------------------------------------
+    # Step 3: Tasks ownership transfer
+    # --------------------------------------------------
+
+    logger.info("Starting tasks ownership transfer")
+
+    tasks_col = prop_db.tasks
+
+    tasks_update_pipeline = [
+        {
+            "$set": {
+                "transfer_ownership": {
+                    "ownershipTransferred": True,
+                    "previousOwner": {
+                        "$ifNull": [
+                            "$transfer_ownership.previousOwner",
+                            "$metadata.createdBy"
+                        ]
+                    },
+                    "previousMerchantId": {
+                        "$ifNull": [
+                            "$transfer_ownership.previousMerchantId",
+                            "$merchantId"
+                        ]
+                    },
+                    "ownershipTransferredAt": {
+                        "$ifNull": [
+                            "$transfer_ownership.ownershipTransferredAt",
+                            "$$NOW"
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "$set": {
+                "assignedTo": {
+                    "$setUnion": [
+                        {"$ifNull": ["$assignedTo", []]},
+                        ["$metadata.createdBy"]
+                    ]
+                }
+            }
+        },
+        {
+            "$set": {
+                "metadata.createdBy": NEW_OWNER_ID,
+                "metadata.updatedBy": NEW_OWNER_ID,
+                "merchantId": NEW_MERCHANT_ID
+            }
+        }
+    ]
+
+    tasks_result = await tasks_col.update_many(
+        {
+            "$and": [
+                {"metadata.createdBy": {"$ne": NEW_OWNER_ID}},
+                {
+                    "$or": [
+                        {"transfer_ownership.ownershipTransferred": {"$exists": False}},
+                        {"transfer_ownership.ownershipTransferred": False}
+                    ]
+                }
+            ]
+        },
+        tasks_update_pipeline
+    )
+
+    logger.info(
+        "Tasks transfer completed | matched=%s | modified=%s",
+        tasks_result.matched_count,
+        tasks_result.modified_count,
+    )
+
     return {
         "matched": result.matched_count,
         "modified": result.modified_count,
