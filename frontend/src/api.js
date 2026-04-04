@@ -285,3 +285,21 @@ export async function upsertExpiryJobRecipients(jobId, emails) {
     throw err;
   }
 }
+
+export async function startSpitogatosCrawler(payload) {
+  try {
+    const response = await axios.post(`${BASE}/crawler/spitogatos`, payload);
+    return response.data;
+  } catch (err) {
+    return { error: err.response?.data?.detail || "Failed to start crawler" };
+  }
+}
+
+export async function stopSpitogatosCrawler() {
+  try {
+    const response = await axios.post(`${BASE}/crawler/spitogatos/stop`);
+    return response.data;
+  } catch (err) {
+    return { error: err.response?.data?.detail || "Failed to stop crawler" };
+  }
+}

@@ -41,6 +41,7 @@ from passport_expiry_job import start_passport_expiry_scheduler
 from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
+from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
 
 fastapi_app = FastAPI()
 
@@ -3020,6 +3021,52 @@ async def get_expiry_job_controls():
         "success": True,
         "data": jobs
     }
+
+@fastapi_app.post("/crawler/spitogatos")
+async def trigger_spitogatos_crawl(payload: dict):
+    try:
+        url = payload.get("url")
+        pages = payload.get("pages", 3)
+        cookie = payload.get("cookie")
+        prop_token = payload.get("prop-token")
+
+        if not url or not pages or not cookie or not prop_token:
+            raise HTTPException(
+                status_code=400,
+                detail="url, pages, cookie and prop token are required"
+            )
+
+        crawler = SpitogatosCrawler(prop_db.formdatas, db, cookie, prop_token)
+
+        result = await crawler.crawl(
+            base_url=url,
+            total_pages=pages
+        )
+
+        return {
+            "status": "completed",
+            "total": result
+        }
+
+    except AuthExpiredError as e:
+        raise HTTPException(
+            status_code=401,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@fastapi_app.post("/crawler/spitogatos/stop")
+async def stop_crawler():
+    await db.job_control.update_one(
+        {"_id": "spitogatos_crawler_job"},
+        {"$set": {"status": "stop"}}
+    )
+    return {"status": "stopping"}
 
 def send_email(to: str, subject: str, body: str):
     """

@@ -20,3 +20,7 @@ google-auth
 google-auth-oauthlib
 apscheduler
 pytz
+beautifulsoup4
+lxml
+playwright
+tf-playwright-stealth
