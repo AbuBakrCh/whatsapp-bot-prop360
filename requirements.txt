@@ -22,6 +22,4 @@ apscheduler
 pytz
 beautifulsoup4
 lxml
-playwright
-tf-playwright-stealth
 curl-cffi
