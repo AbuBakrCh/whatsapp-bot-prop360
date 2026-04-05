@@ -3,9 +3,8 @@ import { startSpitogatosCrawler, stopSpitogatosCrawler } from "../api";
 
 export default function SpitogatosCrawler() {
   const [url, setUrl] = useState("");
-  const [pages, setPages] = useState(3);
+  const [pages, setPages] = useState("");
   const [cookie, setCookie] = useState("");
-  const [propToken, setPropToken] = useState("");
 
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -14,8 +13,8 @@ export default function SpitogatosCrawler() {
   const [responseMsg, setResponseMsg] = useState("");
 
   const handleStart = async () => {
-    if (!url || !cookie || !propToken) {
-      setResponseMsg("URL, cookie and prop token are required.");
+    if (!url || !cookie) {
+      setResponseMsg("URL and cookie are required.");
       return;
     }
 
@@ -27,8 +26,7 @@ export default function SpitogatosCrawler() {
       const res = await startSpitogatosCrawler({
         url,
         pages: Number(pages),
-        cookie,
-        "prop-token": propToken,
+        cookie
       });
 
       if (res.error) {
@@ -93,12 +91,6 @@ export default function SpitogatosCrawler() {
           className="border border-slate-300 rounded-md px-3 py-2 h-20 resize-none"
         />
 
-        <textarea
-          value={propToken}
-          onChange={(e) => setPropToken(e.target.value)}
-          placeholder="Solomon Bearer Token"
-          className="border border-slate-300 rounded-md px-3 py-2 h-20 resize-none"
-        />
       </div>
 
       {/* Buttons */}

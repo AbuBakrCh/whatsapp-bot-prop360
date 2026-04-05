@@ -4,6 +4,7 @@ import re
 from typing import List
 
 from bs4 import BeautifulSoup
+from bson import ObjectId
 from curl_cffi import CurlMime
 from curl_cffi.requests import AsyncSession
 
@@ -15,8 +16,7 @@ class ServerError(Exception):
 
 class SpitogatosCrawler:
     DOMAIN = "https://www.spitogatos.gr"
-    IMAGE_UPLOAD_URL = "https://valid.prop360.pro/check_images"
-    PROPERTY_API_URL = "https://solomon.realestate/api/merchant/form_data"
+    BASE_URL = "https://prop360.pro/api/integration"
 
     def __init__(self, collection, db, reese84: str, token: str):
         self.collection = collection
@@ -121,7 +121,7 @@ class SpitogatosCrawler:
         return result
 
     # =========================
-    # DESCRIPTION BUILDER
+    # DESCRIPTION
     # =========================
     def build_description_html(self, data: dict) -> str:
         html = []
@@ -145,90 +145,117 @@ class SpitogatosCrawler:
         return "".join(html)
 
     # =========================
-    # IMAGE UPLOAD
+    # FIELD MAPPING
     # =========================
-    async def upload_image(self, session, image_url: str, merchant_id: str, folder: str):
-        img_resp = await session.get(image_url)
-        if img_resp.status_code != 200:
-            return None
+    def map_fields(self, data):
+        features = data.get("features", {})
 
-        form = CurlMime()
-        form.addpart(
-            name="files",
-            filename="image.png",
-            data=img_resp.content,
-            content_type="image/png",
-        )
-        form.addpart(name="folder", data=folder)
-        form.addpart(name="merchantId", data=merchant_id)
+        def clean_price(price):
+            return int(re.sub(r"[^\d]", "", price)) if price else None
 
-        resp = await session.post(
-            self.IMAGE_UPLOAD_URL,
-            multipart=form,
-            headers={
-                "authorization": f"Bearer {self.token}",
-                "origin": "https://solomon.realestate",
-                "referer": "https://solomon.realestate/",
-            }
-        )
+        def clean_number(val):
+            if not val:
+                return None
+            return int(re.sub(r"[^\d]", "", val))
 
-        if resp.status_code >= 500:
-            raise ServerError(f"Image upload server error: {resp.status_code}")
+        def parse_construction_year(val):
+            if not val:
+                return None
+            val = val.strip()
+            if re.search(r"\d{4}", val):
+                return int(re.search(r"\d{4}", val).group())
+            return val
 
-        if resp.status_code in (401, 403):
-            raise AuthExpiredError("Solomon token expired during image upload")
-
-        if resp.status_code == 200:
-            result = resp.json()
-            return result[0] if isinstance(result, list) else result
-
-
-    # =========================
-    # PAYLOAD BUILDER
-    # =========================
-    def build_payload(self, data, images_meta, property_url):
         return {
-            "formId": "67cdbbb067127a1afc8154f0",
-            "indicator": "properties",
-            "isPublic": False,
-            "destructive": False,
-            "data": {
-                "field-1741536181001-wd8it2quy": data["title"],
-                "field-1741536272085-yi74oirib": re.sub(r"[^\d]", "", data["price"]),
-                "field-1744021392093-03a295o25": data["address"],
-                "field-1741536304675-8m3nlhbmy": self.build_description_html(data),
-                "field-1741536446663-7s5bcmilv": images_meta,
-                "spitogatos_url": property_url
-            }
+            "Title": data.get("title"),
+            "Description": self.build_description_html(data),
+            "Address": data.get("address"),
+
+            "Price": clean_price(data.get("price")),
+            "Square Meters": clean_number(features.get("Surface")),
+            "Construction Year": parse_construction_year(features.get("Construction year")),
+
+            "Bathrooms": clean_number(features.get("Bathrooms")),
+            "Bedroom": clean_number(features.get("Bedrooms") or features.get("Rooms")),
+
+            "Floor": features.get("Floor"),
+            "Heating System": features.get("Heating system"),
+
+            "isPublic": False
         }
 
-    async def is_already_processed(self, property_url: str) -> bool:
-        doc = await self.collection.find_one({
-            "data.spitogatos_url": property_url
-        })
-        return doc is not None
+    # =========================
+    # CREATE PROPERTY
+    # =========================
+    async def create_property(self, session, mapped_data):
+        url = f"{self.BASE_URL}/properties"
 
-    # =========================
-    # SUBMIT PROPERTY
-    # =========================
-    async def submit_property(self, session, payload):
         resp = await session.post(
-            self.PROPERTY_API_URL,
-            json=payload,
+            url,
+            json={"data": mapped_data},
             headers={
-                "authorization": f"Bearer {self.token}",
-                "content-type": "application/json",
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
             }
         )
 
         if resp.status_code >= 500:
-            raise ServerError(f"Property submission server error: {resp.status_code}")
+            raise ServerError("Property API server error")
 
         if resp.status_code in (401, 403):
-            raise AuthExpiredError("Solomon token expired during property submission")
+            raise AuthExpiredError("Token expired")
 
-        print("Submit status:", resp.status_code)
-        print(resp.text)
+        if resp.status_code != 200:
+            print("Create failed:", resp.text)
+            return None
+
+        result = resp.json()
+        return result.get("property", {}).get("id")
+
+    # =========================
+    # UPLOAD IMAGES
+    # =========================
+    async def upload_images(self, session, property_id, images):
+        url = f"{self.BASE_URL}/properties/{property_id}/images"
+
+        form = CurlMime()
+
+        added = False
+
+        for i, img in enumerate(images[:10]):
+            resp = await session.get(img["url"])
+            if resp.status_code != 200:
+                continue
+
+            form.addpart(
+                name="images",
+                filename=f"image{i}.jpg",
+                data=resp.content,
+                content_type="image/jpeg",
+            )
+            added = True
+
+        if not added:
+            return
+
+        resp = await session.post(
+            url,
+            multipart=form,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+            }
+        )
+
+        print("Image upload:", resp.status_code, resp.text)
+
+    # =========================
+    # DUPLICATE CHECK
+    # =========================
+    async def is_already_processed(self, property_url: str) -> bool:
+        doc = await self.collection.find_one({
+            "spitogatos_url": property_url
+        })
+        return doc is not None
 
     async def should_stop(self):
         control = await self.db.job_control.find_one(
@@ -256,7 +283,7 @@ class SpitogatosCrawler:
                         return total
 
                     url = base_url if page == 1 else f"{base_url}/page_{page}"
-                    print(f"[CRAWLER] Page {page}: {url}")
+                    print(f"[PAGE] {url}")
 
                     html = await self.fetch_html(session, url)
 
@@ -270,42 +297,62 @@ class SpitogatosCrawler:
                             print("[CRAWLER] Stopped mid-processing")
                             return total
 
-                        print(f"[CRAWLER] Fetching property: {property_url}")
+                        print(f"[PROPERTY] {property_url}")
 
-                        if await self.is_already_processed(property_url):
-                            print(f"[CRAWLER] Skipping duplicate: {property_url}")
-                            continue
+                        try:
+                            if await self.is_already_processed(property_url):
+                                print("Skipping duplicate")
+                                continue
 
-                        property_html = await self.fetch_html(session, property_url)
+                            property_html = await self.fetch_html(session, property_url)
+                            if not property_html:
+                                continue
 
-                        if not property_html:
-                            continue
+                            data = self.extract_property_data(property_html)
 
-                        data = self.extract_property_data(property_html)
+                            data = {
+                                k: v for k, v in data.items()
+                                if v is not None and v != "" and v != "NaN"
+                            }
 
-                        images_meta = []
-                        for img in data["images"][:10]:
-                            meta = await self.upload_image(
-                                session,
-                                img["url"],
-                                merchant_id="3124d713-067b-427c-9672-1cfee6058246", #invest greece research merchant id
-                                folder="field-1741536446663-7s5bcmilv"
+                            mapped = self.map_fields(data)
+
+                            property_id = await self.create_property(session, mapped)
+                            if not property_id:
+                                continue
+
+                            await self.collection.update_one(
+                                {"_id": ObjectId(property_id)},
+                                {
+                                    "$set": {
+                                        "spitogatos_url": property_url
+                                    }
+                                }
                             )
-                            if meta:
-                                images_meta.append(meta)
 
-                        payload = self.build_payload(data, images_meta, property_url)
-                        await self.submit_property(session, payload)
+                            await self.upload_images(session, property_id, data.get("images", []))
 
-                        total += 1
+                            total += 1
 
-                        await asyncio.sleep(random.uniform(2, 4))
+                            await asyncio.sleep(random.uniform(2, 4))
 
-                    await asyncio.sleep(delay + random.uniform(3, 6))
+                        except Exception as e:
+                            print(f"[ERROR] Property failed: {property_url} → {e}")
+                            continue
+
+                    await asyncio.sleep(delay + random.uniform(1, 3))
 
             except AuthExpiredError as e:
                 print(f"[CRAWLER STOPPED] {e}")
-                raise e  # propagate to API
+                raise e
 
-        print(f"[CRAWLER] DONE → {total} properties fetched")
+            except ServerError as e:
+                print(f"[SERVER ERROR] {e}")
+                raise e
+
+            except Exception as e:
+                print(f"[UNEXPECTED ERROR] {e}")
+                raise e
+
+        print(f"[DONE] {total} properties")
         return total

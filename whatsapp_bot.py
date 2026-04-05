@@ -3028,7 +3028,8 @@ async def trigger_spitogatos_crawl(payload: dict):
         url = payload.get("url")
         pages = payload.get("pages", 3)
         cookie = payload.get("cookie")
-        prop_token = payload.get("prop-token")
+        prop_token = payload.get(
+            "prop-token") or "prop360_9b524c1ca1cbe65817f654ea93442aba39a1105e29dbfc5cc65a4c6787f4d9c9"
 
         if not url or not pages or not cookie or not prop_token:
             raise HTTPException(
