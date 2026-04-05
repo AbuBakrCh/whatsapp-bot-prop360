@@ -18,6 +18,7 @@ from urllib.parse import quote
 
 import google.generativeai as genai
 import httpx
+import math
 import numpy as np
 import openai
 import pandas as pd
@@ -148,15 +149,23 @@ def load_dataset_from_google_sheet(sheet_id):
 
 # --- Build Embedding Index (OpenAI) ---
 def build_index(df, model_name="text-embedding-3-small"):
+    def clean_text(x):
+        if x is None:
+            return ""
+        if isinstance(x, float) and math.isnan(x):
+            return ""
+        return str(x)
+
     print("📦 Encoding dataset with OpenAI embeddings...")
     start = time()
 
-    texts = df["questions"].astype(str).tolist()
+    texts = df["questions"].fillna("").astype(str).tolist()
     all_embeddings = []
 
     batch_size = 50
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
+        batch = [clean_text(x) for x in batch]
         response = openai.embeddings.create(
             input=batch,
             model=model_name
@@ -353,7 +362,7 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
-df = df.replace({np.nan: None})
+df = df.fillna("")
 embeddings, texts = build_index(df)
 chat_sessions = {}
 
@@ -544,7 +553,7 @@ async def receive(request: Request):
             if text_for_search.startswith("refresh"):
                 print("🔄 Admin requested dataset refresh...")
                 df = load_dataset_from_google_sheet(SHEET_ID)
-                df = df.replace({np.nan: None})
+                df = df.fillna("")
 
                 if "2" in text_for_search:
                     model_name = "text-embedding-3-large"
