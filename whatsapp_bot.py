@@ -353,6 +353,7 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 # --- Initial Load ---
 df = load_dataset_from_google_sheet(SHEET_ID)
+df = df.replace({np.nan: None})
 embeddings, texts = build_index(df)
 chat_sessions = {}
 
@@ -543,6 +544,7 @@ async def receive(request: Request):
             if text_for_search.startswith("refresh"):
                 print("🔄 Admin requested dataset refresh...")
                 df = load_dataset_from_google_sheet(SHEET_ID)
+                df = df.replace({np.nan: None})
 
                 if "2" in text_for_search:
                     model_name = "text-embedding-3-large"
