@@ -2,11 +2,22 @@ import asyncio
 import random
 import re
 from typing import List
+import logging
 
 from bs4 import BeautifulSoup
 from bson import ObjectId
 from curl_cffi import CurlMime
 from curl_cffi.requests import AsyncSession
+
+logger = logging.getLogger("spitogatos_crawler")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] %(name)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 class AuthExpiredError(Exception):
     pass
@@ -40,6 +51,10 @@ class SpitogatosCrawler:
             },
             cookies={"reese84": self.reese84},
         )
+
+        logger.info(f"[FETCH HTML] {url} → {response.status_code}")
+        preview = (response.text[:300] or "").replace("\n", " ")
+        logger.info(f"[FETCH HTML BODY PREVIEW] {preview}")
 
         if response.status_code >= 500:
             raise ServerError(f"Spitogatos server error: {response.status_code}")
