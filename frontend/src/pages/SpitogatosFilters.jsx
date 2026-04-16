@@ -5,6 +5,7 @@ import { getPropertyFilter } from "../api";
 export default function SpitogatosFilters() {
   const [email, setEmail] = useState("");
 
+  const [area, setArea] = useState("");
   const [purpose, setPurpose] = useState("");
   const [category, setCategory] = useState("");
   const [type, setType] = useState("");
@@ -45,7 +46,7 @@ export default function SpitogatosFilters() {
     setPurpose(res.purpose || "");
     setCategory(res.category || "");
     setType(res.type || "");
-
+    setArea(res.area || "");
     setPriceMin(res.price?.min ?? "");
     setPriceMax(res.price?.max ?? "");
 
@@ -121,6 +122,7 @@ export default function SpitogatosFilters() {
   if (purpose) payload.purpose = purpose;
   if (category) payload.category = category;
   if (type) payload.type = type;
+  if (area) payload.area = area;
 
   if (pMin !== null || pMax !== null) {
     payload.price = {};
@@ -145,6 +147,7 @@ export default function SpitogatosFilters() {
       // reset
       setEmail("");
       setPurpose("");
+      setArea("");
       setCategory("");
       setType("");
       setPriceMin("");
@@ -169,6 +172,7 @@ const handleClear = () => {
   setSurfaceMin("");
   setSurfaceMax("");
   setResponseMsg("");
+  setArea("");
 };
 
   return (
@@ -202,6 +206,20 @@ const handleClear = () => {
 
       {/* Inputs */}
       <div className="flex flex-col gap-4 mb-6">
+      {/* Area */}
+      <div>
+        <label className="text-sm font-medium text-gray-600 mb-1 block">
+          Area
+        </label>
+        <input
+          type="text"
+          value={area}
+          onChange={(e) => setArea(e.target.value)}
+          placeholder="e.g. Athens, Glyfada, Chalkidiki"
+          className="w-full border border-slate-300 rounded-md px-3 py-2"
+        />
+      </div>
+
       {/* Purpose */}
       <div>
         <label className="text-sm font-medium text-gray-600 mb-1 block">

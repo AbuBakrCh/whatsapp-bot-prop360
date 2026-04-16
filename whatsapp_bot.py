@@ -3042,7 +3042,7 @@ async def trigger_spitogatos_crawl(payload: dict):
         pages = payload.get("pages", 3)
         cookie = payload.get("cookie")
         prop_token = payload.get(
-            "prop-token") or "prop360_9b524c1ca1cbe65817f654ea93442aba39a1105e29dbfc5cc65a4c6787f4d9c9"
+            "prop-token") or "prop360_aad4dbd7a9f294499334ae2075991ea1c6d321a12c5fa9a2bb3fce15a3bbce85"
 
         if not url or not pages or not cookie or not prop_token:
             raise HTTPException(
@@ -3089,6 +3089,7 @@ async def add_property_filter(payload: dict):
         purpose = payload.get("purpose")
         category = payload.get("category")
         prop_type = payload.get("type")
+        area = payload.get("area")
 
         price = payload.get("price", {})
         surface = payload.get("surface", {})
@@ -3141,6 +3142,9 @@ async def add_property_filter(payload: dict):
 
         if prop_type:
             doc["type"] = prop_type
+
+        if area:
+            doc["area"] = area
 
         # price
         if price_min is not None or price_max is not None:
