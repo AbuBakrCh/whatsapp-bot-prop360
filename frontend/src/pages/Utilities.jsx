@@ -13,7 +13,6 @@ import PropertyActivitySummaries from "./PropertyActivitySummaries"
 import MergeContacts from "./MergeContacts"
 import JobControl from "./JobControl";
 import ExpiryJobsControl from "./ExpiryJobsControl";
-import SpitogatosCrawler from "./SpitogatosCrawler";
 
 export default function Utilities() {
   return (
@@ -44,7 +43,6 @@ export default function Utilities() {
         <MergeContacts />
         <JobControl jobId="daily-activity" jobName="Daily Activity Emails" />
         <ExpiryJobsControl />
-        <SpitogatosCrawler />
       </div>
     </div>
   );

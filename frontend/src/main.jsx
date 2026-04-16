@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./App";
 import Utilities from "./pages/Utilities";
 import ImportantLinks from './pages/ImportantLinks'
+import Spitogatos from "./pages/Spitogatos";
 import "./styles.css";
 
 createRoot(document.getElementById("root")).render(
@@ -12,6 +13,7 @@ createRoot(document.getElementById("root")).render(
       <Route path="/" element={<App />} />
       <Route path="/utilities" element={<Utilities />} />
       <Route path="/important-links" element={<ImportantLinks />} />
+      <Route path="/spitogatos" element={<Spitogatos />} />
     </Routes>
   </BrowserRouter>
 );
