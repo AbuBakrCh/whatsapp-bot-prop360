@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { addPropertyFilter } from "../api";
+import { getPropertyFilter } from "../api";
 
 export default function SpitogatosFilters() {
   const [email, setEmail] = useState("");
@@ -16,6 +17,49 @@ export default function SpitogatosFilters() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [responseMsg, setResponseMsg] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+
+  const handleLoad = async () => {
+  if (!email) {
+    setResponseMsg("Enter email to load filter.");
+    return;
+  }
+
+  setIsLoading(true);
+  setResponseMsg("Loading filter...");
+
+  try {
+    const res = await getPropertyFilter(email);
+
+    if (res.error) {
+      setResponseMsg(res.error);
+      return;
+    }
+
+    if (res.message) {
+      setResponseMsg(res.message);
+      return;
+    }
+
+    setPurpose(res.purpose || "");
+    setCategory(res.category || "");
+    setType(res.type || "");
+
+    setPriceMin(res.price?.min ?? "");
+    setPriceMax(res.price?.max ?? "");
+
+    setSurfaceMin(res.surface?.min ?? "");
+    setSurfaceMax(res.surface?.max ?? "");
+
+    setResponseMsg("Filter loaded successfully ✅");
+  } catch (err) {
+    setResponseMsg("Failed to load filter.");
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const handleSave = async () => {
   if (!email) {
@@ -121,17 +165,31 @@ export default function SpitogatosFilters() {
         Store Client Filters
       </h2>
 
-      {/* Inputs */}
-      <div className="flex flex-col gap-4 mb-6">
-        {/* Email */}
+      {/* Email + Load */}
+      <div className="flex gap-3 mb-4">
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Client Email"
-          className="border border-slate-300 rounded-md px-3 py-2"
+          className="w-full border border-slate-300 rounded-md px-3 py-2"
         />
 
+        <button
+          onClick={handleLoad}
+          disabled={isLoading}
+          className={`px-4 py-2 rounded-md text-white font-medium ${
+            isLoading
+              ? "bg-gray-300"
+              : "bg-gray-600 hover:bg-gray-700"
+          }`}
+        >
+          {isLoading ? "Loading..." : "Load"}
+        </button>
+      </div>
+
+      {/* Inputs */}
+      <div className="flex flex-col gap-4 mb-6">
         {/* Purpose */}
         <select
           value={purpose}

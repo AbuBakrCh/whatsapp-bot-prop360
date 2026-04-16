@@ -304,18 +304,35 @@ export async function stopSpitogatosCrawler() {
   }
 }
 
-export const addPropertyFilter = async (payload) => {
+export async function addPropertyFilter(payload) {
   try {
-    const res = await fetch("/property-filters/add", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    return await res.json();
+    const response = await axios.post(
+      `${BASE}/property-filters/add`,
+      payload
+    );
+    return response.data;
   } catch (err) {
-    return { error: "Request failed." };
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to save filters",
+    };
   }
-};
+}
+
+export async function getPropertyFilter(email) {
+  try {
+    const response = await axios.get(
+      `${BASE}/property-filters/${email}`
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch filter",
+    };
+  }
+}

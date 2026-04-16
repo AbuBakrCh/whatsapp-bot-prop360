@@ -3082,6 +3082,124 @@ async def stop_crawler():
     )
     return {"status": "stopping"}
 
+@fastapi_app.post("/property-filters/add")
+async def add_property_filter(payload: dict):
+    try:
+        email = payload.get("email")
+        purpose = payload.get("purpose")
+        category = payload.get("category")
+        prop_type = payload.get("type")
+
+        price = payload.get("price", {})
+        surface = payload.get("surface", {})
+
+        if not email:
+            return {"error": "Email is required."}
+
+        # -------------------------------------
+        # Normalize ranges
+        # -------------------------------------
+        def to_number(value):
+            try:
+                return float(value)
+            except:
+                return None
+
+        price_min = to_number(price.get("min"))
+        price_max = to_number(price.get("max"))
+
+        surface_min = to_number(surface.get("min"))
+        surface_max = to_number(surface.get("max"))
+
+        filters_col = prop_db.propertyfilters
+
+        # -------------------------------------
+        # Preserve createdAt if exists
+        # -------------------------------------
+        existing = await filters_col.find_one({"clientEmail": email})
+
+        created_at = (
+            existing.get("createdAt")
+            if existing and existing.get("createdAt")
+            else datetime.utcnow()
+        )
+
+        # -------------------------------------
+        # Build FULL document (replacement)
+        # -------------------------------------
+        doc = {
+            "clientEmail": email,
+            "createdAt": created_at,
+            "updatedAt": datetime.utcnow()
+        }
+
+        if purpose:
+            doc["purpose"] = purpose
+
+        if category:
+            doc["category"] = category
+
+        if prop_type:
+            doc["type"] = prop_type
+
+        # price
+        if price_min is not None or price_max is not None:
+            doc["price"] = {}
+            if price_min is not None:
+                doc["price"]["min"] = price_min
+            if price_max is not None:
+                doc["price"]["max"] = price_max
+
+        # surface
+        if surface_min is not None or surface_max is not None:
+            doc["surface"] = {}
+            if surface_min is not None:
+                doc["surface"]["min"] = surface_min
+            if surface_max is not None:
+                doc["surface"]["max"] = surface_max
+
+        # -------------------------------------
+        # REPLACE (key change)
+        # -------------------------------------
+        result = await filters_col.replace_one(
+            {"clientEmail": email},
+            doc,
+            upsert=True
+        )
+
+        return {
+            "message": "Property filter saved successfully.",
+            "upserted": result.upserted_id is not None,
+            "replaced": result.modified_count > 0
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.get("/property-filters/{email}")
+async def get_property_filter(email: str):
+    try:
+        if not email:
+            return {"error": "Email is required."}
+
+        filters_col = prop_db.propertyfilters
+
+        doc = await filters_col.find_one({"clientEmail": email})
+
+        if not doc:
+            return {"message": "No filter found for this email."}
+
+        # Convert ObjectId to string
+        doc["_id"] = str(doc["_id"])
+
+        return doc
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
 def send_email(to: str, subject: str, body: str):
     """
     Send an email via Gmail SMTP.
