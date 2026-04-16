@@ -303,3 +303,19 @@ export async function stopSpitogatosCrawler() {
     return { error: err.response?.data?.detail || "Failed to stop crawler" };
   }
 }
+
+export const addPropertyFilter = async (payload) => {
+  try {
+    const res = await fetch("/property-filters/add", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return await res.json();
+  } catch (err) {
+    return { error: "Request failed." };
+  }
+};

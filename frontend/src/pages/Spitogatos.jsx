@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import SpitogatosCrawler from "./SpitogatosCrawler";
+import SpitogatosFilters from "./SpitogatosFilters";
 
 export default function Spitogatos() {
   return (
@@ -18,6 +19,7 @@ export default function Spitogatos() {
 
       {/* Content */}
       <div className="flex-1 p-6 space-y-8">
+        <SpitogatosFilters />
         <SpitogatosCrawler />
       </div>
     </div>
