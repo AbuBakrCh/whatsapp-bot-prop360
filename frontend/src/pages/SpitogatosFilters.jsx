@@ -159,6 +159,18 @@ export default function SpitogatosFilters() {
   }
 };
 
+const handleClear = () => {
+  setEmail("");
+  setPurpose("");
+  setCategory("");
+  setType("");
+  setPriceMin("");
+  setPriceMax("");
+  setSurfaceMin("");
+  setSurfaceMax("");
+  setResponseMsg("");
+};
+
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">
@@ -190,11 +202,15 @@ export default function SpitogatosFilters() {
 
       {/* Inputs */}
       <div className="flex flex-col gap-4 mb-6">
-        {/* Purpose */}
+      {/* Purpose */}
+      <div>
+        <label className="text-sm font-medium text-gray-600 mb-1 block">
+          Purpose
+        </label>
         <select
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}
-          className={`border border-slate-300 rounded-md px-3 py-2 ${
+          className={`w-full border border-slate-300 rounded-md px-3 py-2 ${
             !purpose ? "text-gray-400" : "text-black"
           }`}
         >
@@ -202,12 +218,17 @@ export default function SpitogatosFilters() {
           <option value="sale">Sale</option>
           <option value="rent">Rent</option>
         </select>
+      </div>
 
-        {/* Category */}
+      {/* Category */}
+      <div>
+        <label className="text-sm font-medium text-gray-600 mb-1 block">
+          Category
+        </label>
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className={`border border-slate-300 rounded-md px-3 py-2 ${
+          className={`w-full border border-slate-300 rounded-md px-3 py-2 ${
             !category ? "text-gray-400" : "text-black"
           }`}
         >
@@ -219,12 +240,17 @@ export default function SpitogatosFilters() {
           <option value="new-development">New development</option>
           <option value="student-housing">Student housing</option>
         </select>
+      </div>
 
-        {/* Type */}
+      {/* Type */}
+      <div>
+        <label className="text-sm font-medium text-gray-600 mb-1 block">
+          Property Type
+        </label>
         <select
           value={type}
           onChange={(e) => setType(e.target.value)}
-          className={`border border-slate-300 rounded-md px-3 py-2 ${
+          className={`w-full border border-slate-300 rounded-md px-3 py-2 ${
             !type ? "text-gray-400" : "text-black"
           }`}
         >
@@ -237,56 +263,75 @@ export default function SpitogatosFilters() {
           <option value="maisonette">Maisonette</option>
           <option value="detached_house">Detached house</option>
         </select>
+      </div>
 
-        {/* Price */}
+      {/* Price */}
+      <div>
+        <label className="text-sm font-medium text-gray-600 mb-1 block">
+          Price Range
+        </label>
         <div className="flex gap-3">
           <input
             type="number"
             value={priceMin}
             onChange={(e) => setPriceMin(e.target.value)}
-            placeholder="Min Price"
+            placeholder="Min"
             className="w-1/2 border border-slate-300 rounded-md px-3 py-2"
           />
           <input
             type="number"
             value={priceMax}
             onChange={(e) => setPriceMax(e.target.value)}
-            placeholder="Max Price"
+            placeholder="Max"
             className="w-1/2 border border-slate-300 rounded-md px-3 py-2"
           />
         </div>
+      </div>
 
-        {/* Surface */}
+      {/* Surface */}
+      <div>
+        <label className="text-sm font-medium text-gray-600 mb-1 block">
+          Surface (sqm)
+        </label>
         <div className="flex gap-3">
           <input
             type="number"
             value={surfaceMin}
             onChange={(e) => setSurfaceMin(e.target.value)}
-            placeholder="Min Surface (sqm)"
+            placeholder="Min"
             className="w-1/2 border border-slate-300 rounded-md px-3 py-2"
           />
           <input
             type="number"
             value={surfaceMax}
             onChange={(e) => setSurfaceMax(e.target.value)}
-            placeholder="Max Surface (sqm)"
+            placeholder="Max"
             className="w-1/2 border border-slate-300 rounded-md px-3 py-2"
           />
         </div>
       </div>
+    </div>
 
-      {/* Button */}
-      <button
-        onClick={handleSave}
-        disabled={isSaving}
-        className={`w-full px-4 py-2 rounded-md text-white font-medium ${
-          isSaving
-            ? "bg-blue-300 cursor-not-allowed"
-            : "bg-blue-600 hover:bg-blue-700"
-        }`}
-      >
-        {isSaving ? "Saving..." : "Save Filters"}
-      </button>
+<div className="flex gap-3">
+  <button
+    onClick={handleClear}
+    className="w-1/2 px-4 py-2 rounded-md font-medium border border-gray-300 text-gray-700 hover:bg-gray-100"
+  >
+    Clear
+  </button>
+
+  <button
+    onClick={handleSave}
+    disabled={isSaving}
+    className={`w-1/2 px-4 py-2 rounded-md text-white font-medium ${
+      isSaving
+        ? "bg-blue-300 cursor-not-allowed"
+        : "bg-blue-600 hover:bg-blue-700"
+    }`}
+  >
+    {isSaving ? "Saving..." : "Save Filters"}
+  </button>
+</div>
 
       {/* Status */}
       {responseMsg && (
