@@ -3088,7 +3088,6 @@ async def add_property_filter(payload: dict):
         email = payload.get("email")
         purpose = payload.get("purpose")
         category = payload.get("category")
-        prop_type = payload.get("type")
         area = payload.get("area")
 
         price = payload.get("price", {})
@@ -3139,9 +3138,6 @@ async def add_property_filter(payload: dict):
 
         if category:
             doc["category"] = category
-
-        if prop_type:
-            doc["type"] = prop_type
 
         if area:
             doc["area"] = area

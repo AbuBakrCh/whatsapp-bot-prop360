@@ -260,29 +260,6 @@ const handleClear = () => {
         </select>
       </div>
 
-      {/* Type */}
-      <div>
-        <label className="text-sm font-medium text-gray-600 mb-1 block">
-          Property Type
-        </label>
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          className={`w-full border border-slate-300 rounded-md px-3 py-2 ${
-            !type ? "text-gray-400" : "text-black"
-          }`}
-        >
-          <option value="">Select Property Type</option>
-          <option value="apartment">Apartment</option>
-          <option value="studio">Studio</option>
-          <option value="villa">Villa</option>
-          <option value="loft">Loft</option>
-          <option value="bungalow">Bungalow</option>
-          <option value="maisonette">Maisonette</option>
-          <option value="detached_house">Detached house</option>
-        </select>
-      </div>
-
       {/* Price */}
       <div>
         <label className="text-sm font-medium text-gray-600 mb-1 block">

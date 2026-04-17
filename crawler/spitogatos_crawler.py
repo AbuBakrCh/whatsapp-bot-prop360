@@ -1,8 +1,9 @@
 import asyncio
 import random
-import re
 from typing import List
 import logging
+import re
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from bson import ObjectId
@@ -268,7 +269,8 @@ class SpitogatosCrawler:
     # =========================
     async def is_already_processed(self, property_url: str) -> bool:
         doc = await self.collection.find_one({
-            "spitogatos_url": property_url
+            "spitogatos.propertyUrl": property_url,
+            "status": "active"
         })
         return doc is not None
 
@@ -336,11 +338,12 @@ class SpitogatosCrawler:
                             if not property_id:
                                 continue
 
+                            filters = extract_spitogatos_filters(base_url, property_url)
                             await self.collection.update_one(
                                 {"_id": ObjectId(property_id)},
                                 {
                                     "$set": {
-                                        "spitogatos_url": property_url
+                                        "spitogatos": filters
                                     }
                                 }
                             )
@@ -371,3 +374,81 @@ class SpitogatosCrawler:
 
         print(f"[DONE] {total} properties")
         return total
+
+def extract_spitogatos_filters(url: str, property_url: str):
+    parsed = urlparse(url)
+    path = parsed.path.strip("/")
+    parts = path.split("/")
+
+    filters = {
+        "baseUrl": url,
+        "propertyUrl": property_url
+    }
+
+    try:
+        # -------------------------------------
+        # Skip language prefix (en, el, etc.)
+        # -------------------------------------
+        if parts and len(parts[0]) == 2:
+            parts = parts[1:]
+
+        # -------------------------------------
+        # Extract purpose + category
+        # Example: for_sale-homes
+        # -------------------------------------
+        if len(parts) >= 1:
+            first = parts[0].lower()
+
+            if "-" in first:
+                transaction_part, category_part = first.split("-", 1)
+
+                # Purpose
+                if "sale" in transaction_part:
+                    filters["purpose"] = "sale"
+                elif "rent" in transaction_part:
+                    filters["purpose"] = "rent"
+
+                # Category (dictionary-based)
+                category_map = {
+                    "home": "home",
+                    "commercial": "commercial",
+                    "land": "land",
+                    "new-development": "new-development",
+                    "student-housing": "student-housing",
+                    "other": "other"
+                }
+
+                mapped_category = None
+                for key, value in category_map.items():
+                    if key in category_part:
+                        mapped_category = value
+                        break
+
+                filters["category"] = mapped_category or category_part
+
+        # -------------------------------------
+        # Area
+        # -------------------------------------
+        if len(parts) >= 2:
+            filters["area"] = parts[1]
+
+        # -------------------------------------
+        # Numeric filters
+        # -------------------------------------
+        for part in parts[2:]:
+            if part.startswith("minprice-"):
+                filters["price_min"] = int(part.split("-")[1])
+
+            elif part.startswith("maxprice-"):
+                filters["price_max"] = int(part.split("-")[1])
+
+            elif part.startswith("minliving_area-"):
+                filters["surface_min"] = int(part.split("-")[1])
+
+            elif part.startswith("maxliving_area-"):
+                filters["surface_max"] = int(part.split("-")[1])
+
+    except Exception:
+        pass
+
+    return filters
