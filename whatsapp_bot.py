@@ -35,6 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from SharePropertyJob import start_property_match_scheduler
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
@@ -646,6 +647,7 @@ async def ensure_indexes():
     start_lease_expiry_scheduler(db, prop_db)
     start_passport_expiry_scheduler(db, prop_db)
     start_ide_expiry_scheduler(db, prop_db)
+    start_property_match_scheduler(prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
@@ -3114,7 +3116,7 @@ async def add_property_filter(payload: dict):
         filters_col = prop_db.propertyfilters
 
         # -------------------------------------
-        # Preserve createdAt if exists
+        # Fetch existing
         # -------------------------------------
         existing = await filters_col.find_one({"clientEmail": email})
 
@@ -3125,41 +3127,57 @@ async def add_property_filter(payload: dict):
         )
 
         # -------------------------------------
-        # Build FULL document (replacement)
+        # Build comparable doc (NO timestamps)
+        # -------------------------------------
+        new_doc = {
+            "clientEmail": email
+        }
+
+        if purpose:
+            new_doc["purpose"] = purpose
+
+        if category:
+            new_doc["category"] = category
+
+        if area:
+            new_doc["area"] = area
+
+        # price
+        if price_min is not None or price_max is not None:
+            new_doc["price"] = {}
+            if price_min is not None:
+                new_doc["price"]["min"] = price_min
+            if price_max is not None:
+                new_doc["price"]["max"] = price_max
+
+        # surface
+        if surface_min is not None or surface_max is not None:
+            new_doc["surface"] = {}
+            if surface_min is not None:
+                new_doc["surface"]["min"] = surface_min
+            if surface_max is not None:
+                new_doc["surface"]["max"] = surface_max
+
+        # -------------------------------------
+        # Skip if no changes
+        # -------------------------------------
+        if not has_changes(existing, new_doc):
+            return {
+                "message": "No changes detected.",
+                "skipped": True
+            }
+
+        # -------------------------------------
+        # Final doc with timestamps
         # -------------------------------------
         doc = {
-            "clientEmail": email,
+            **new_doc,
             "createdAt": created_at,
             "updatedAt": datetime.utcnow()
         }
 
-        if purpose:
-            doc["purpose"] = purpose
-
-        if category:
-            doc["category"] = category
-
-        if area:
-            doc["area"] = area
-
-        # price
-        if price_min is not None or price_max is not None:
-            doc["price"] = {}
-            if price_min is not None:
-                doc["price"]["min"] = price_min
-            if price_max is not None:
-                doc["price"]["max"] = price_max
-
-        # surface
-        if surface_min is not None or surface_max is not None:
-            doc["surface"] = {}
-            if surface_min is not None:
-                doc["surface"]["min"] = surface_min
-            if surface_max is not None:
-                doc["surface"]["max"] = surface_max
-
         # -------------------------------------
-        # REPLACE (key change)
+        # REPLACE
         # -------------------------------------
         result = await filters_col.replace_one(
             {"clientEmail": email},
@@ -3199,6 +3217,17 @@ async def get_property_filter(email: str):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+def has_changes(existing, new_doc):
+    if not existing:
+        return True
+
+    comparable_existing = {
+        k: v for k, v in existing.items()
+        if k not in ["_id", "createdAt", "updatedAt", "lastSharedAt", "lastSharedCount", "lastSharedAtUpdated"]
+    }
+
+    return comparable_existing != new_doc
 
 def send_email(to: str, subject: str, body: str):
     """

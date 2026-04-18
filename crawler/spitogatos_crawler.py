@@ -338,12 +338,12 @@ class SpitogatosCrawler:
                             if not property_id:
                                 continue
 
-                            filters = extract_spitogatos_filters(base_url, property_url)
+                            characteristics = extract_spitogatos_characteristics(base_url, property_url, mapped)
                             await self.collection.update_one(
                                 {"_id": ObjectId(property_id)},
                                 {
                                     "$set": {
-                                        "spitogatos": filters
+                                        "spitogatos": characteristics
                                     }
                                 }
                             )
@@ -375,12 +375,12 @@ class SpitogatosCrawler:
         print(f"[DONE] {total} properties")
         return total
 
-def extract_spitogatos_filters(url: str, property_url: str):
+def extract_spitogatos_characteristics(url: str, property_url: str, mapping):
     parsed = urlparse(url)
     path = parsed.path.strip("/")
     parts = path.split("/")
 
-    filters = {
+    characteristics = {
         "baseUrl": url,
         "propertyUrl": property_url
     }
@@ -404,9 +404,9 @@ def extract_spitogatos_filters(url: str, property_url: str):
 
                 # Purpose
                 if "sale" in transaction_part:
-                    filters["purpose"] = "sale"
+                    characteristics["purpose"] = "sale"
                 elif "rent" in transaction_part:
-                    filters["purpose"] = "rent"
+                    characteristics["purpose"] = "rent"
 
                 # Category (dictionary-based)
                 category_map = {
@@ -424,31 +424,27 @@ def extract_spitogatos_filters(url: str, property_url: str):
                         mapped_category = value
                         break
 
-                filters["category"] = mapped_category or category_part
+                characteristics["category"] = mapped_category or category_part
 
         # -------------------------------------
         # Area
         # -------------------------------------
         if len(parts) >= 2:
-            filters["area"] = parts[1]
+            characteristics["area"] = parts[1]
 
         # -------------------------------------
-        # Numeric filters
+        # Numeric characteristics
         # -------------------------------------
-        for part in parts[2:]:
-            if part.startswith("minprice-"):
-                filters["price_min"] = int(part.split("-")[1])
+        price = mapping.get("Price")
+        surface = mapping.get("Square Meters")
 
-            elif part.startswith("maxprice-"):
-                filters["price_max"] = int(part.split("-")[1])
+        if price is not None:
+            characteristics["price"] = price
 
-            elif part.startswith("minliving_area-"):
-                filters["surface_min"] = int(part.split("-")[1])
-
-            elif part.startswith("maxliving_area-"):
-                filters["surface_max"] = int(part.split("-")[1])
+        if surface is not None:
+            characteristics["surface"] = surface
 
     except Exception:
         pass
 
-    return filters
+    return characteristics

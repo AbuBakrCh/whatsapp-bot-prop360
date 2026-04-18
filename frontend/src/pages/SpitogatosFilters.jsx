@@ -144,6 +144,15 @@ export default function SpitogatosFilters() {
     } else {
       setResponseMsg("Filters saved successfully ✅");
 
+    if (res.error) {
+        setResponseMsg(res.error);
+    } else if (res.skipped) {
+        setResponseMsg("No changes detected ⚠️");
+    } else {
+        setResponseMsg("Filters saved successfully ✅");
+    }
+
+
       // reset
       setEmail("");
       setPurpose("");
