@@ -336,3 +336,23 @@ export async function getPropertyFilter(email) {
     };
   }
 }
+
+export async function getSharePropertyJobStatus() {
+  try {
+    const res = await axios.get(`${BASE}/jobs/share-property`);
+    return res.data;
+  } catch (err) {
+    return { error: "Failed to fetch job status." };
+  }
+}
+
+export async function updateSharePropertyJobStatus(status) {
+  try {
+    const res = await axios.patch(`${BASE}/jobs/share-property`, {
+      status, // "enable" or "disable"
+    });
+    return res.data;
+  } catch (err) {
+    return { error: "Request failed." };
+  }
+}

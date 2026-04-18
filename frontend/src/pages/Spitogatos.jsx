@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import SpitogatosCrawler from "./SpitogatosCrawler";
 import SpitogatosFilters from "./SpitogatosFilters";
+import SharePropertyJobControl from "./SharePropertyJobControl";
 
 export default function Spitogatos() {
   return (
@@ -21,6 +22,7 @@ export default function Spitogatos() {
       <div className="flex-1 p-6 space-y-8">
         <SpitogatosFilters />
         <SpitogatosCrawler />
+        <SharePropertyJobControl />
       </div>
     </div>
   );

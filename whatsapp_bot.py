@@ -647,7 +647,7 @@ async def ensure_indexes():
     start_lease_expiry_scheduler(db, prop_db)
     start_passport_expiry_scheduler(db, prop_db)
     start_ide_expiry_scheduler(db, prop_db)
-    start_property_match_scheduler(prop_db)
+    start_property_match_scheduler(db, prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
@@ -3217,6 +3217,38 @@ async def get_property_filter(email: str):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+@fastapi_app.patch("/jobs/share-property")
+async def control_share_property_job(payload: dict):
+    try:
+        status = payload.get("status")
+
+        if status not in ["enable", "disable"]:
+            return {"error": "Invalid status. Use 'enable' or 'disable'."}
+
+        await db.job_control.update_one(
+            {"_id": "share_property_job"},
+            {"$set": {"status": status}},
+            upsert=True
+        )
+
+        if status == "enable":
+            return {"message": "Share property job enabled."}
+        else:
+            return {"message": "Share property job disabled."}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+@fastapi_app.get("/jobs/share-property")
+async def get_share_property_job_status():
+    control = await db.job_control.find_one(
+        {"_id": "share_property_job"}
+    )
+
+    return {
+        "status": control.get("status") if control else "disable"
+    }
 
 def has_changes(existing, new_doc):
     if not existing:

@@ -124,9 +124,16 @@ async def send_properties_email(email, properties):
     send_email_v2([email], subject, body, None)
 
 
-async def share_property_job(prop_db):
-
+async def share_property_job(db, prop_db):
     logger.info("Starting property match job")
+
+    control = await db.job_control.find_one(
+        {"_id": "share_property_job"}
+    )
+
+    if not control or control.get("status") != "enable":
+        logger.info("[Share Property Job] Skipped — job is disabled")
+        return
 
     filters_col = prop_db.propertyfilters
     properties_col = prop_db.formdatas
@@ -187,11 +194,11 @@ async def share_property_job(prop_db):
         matched_clients
     )
 
-def start_property_match_scheduler(prop_db):
+def start_property_match_scheduler(db, prop_db):
     scheduler.add_job(
         share_property_job,
         CronTrigger(hour=11, minute=0, timezone=ZoneInfo("Europe/Athens")),
-        args=[prop_db],
+        args=[db, prop_db],
         id="share_property_job",
         replace_existing=True,
         max_instances=1,
