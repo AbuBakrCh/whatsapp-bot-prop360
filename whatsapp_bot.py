@@ -3088,6 +3088,7 @@ async def stop_crawler():
 async def add_property_filter(payload: dict):
     try:
         email = payload.get("email")
+        source = payload.get("source")
         purpose = payload.get("purpose")
         category = payload.get("category")
         area = payload.get("area")
@@ -3130,7 +3131,8 @@ async def add_property_filter(payload: dict):
         # Build comparable doc (NO timestamps)
         # -------------------------------------
         new_doc = {
-            "clientEmail": email
+            "clientEmail": email,
+            "source": source
         }
 
         if purpose:

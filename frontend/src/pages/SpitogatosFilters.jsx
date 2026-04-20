@@ -4,11 +4,10 @@ import { getPropertyFilter } from "../api";
 
 export default function SpitogatosFilters() {
   const [email, setEmail] = useState("");
-
+  const [source, setSource] = useState("spitogatos");
   const [area, setArea] = useState("");
   const [purpose, setPurpose] = useState("");
   const [category, setCategory] = useState("");
-  const [type, setType] = useState("");
 
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
@@ -43,9 +42,9 @@ export default function SpitogatosFilters() {
       return;
     }
 
+    setSource(res.source || "spitogatos");
     setPurpose(res.purpose || "");
     setCategory(res.category || "");
-    setType(res.type || "");
     setArea(res.area || "");
     setPriceMin(res.price?.min ?? "");
     setPriceMax(res.price?.max ?? "");
@@ -118,10 +117,10 @@ export default function SpitogatosFilters() {
   setResponseMsg("Saving filters...");
 
   const payload = { email };
+  payload.source = source;
 
   if (purpose) payload.purpose = purpose;
   if (category) payload.category = category;
-  if (type) payload.type = type;
   if (area) payload.area = area;
 
   if (pMin !== null || pMax !== null) {
@@ -156,9 +155,9 @@ export default function SpitogatosFilters() {
       // reset
       setEmail("");
       setPurpose("");
+      setSource("spitogatos")
       setArea("");
       setCategory("");
-      setType("");
       setPriceMin("");
       setPriceMax("");
       setSurfaceMin("");
@@ -173,6 +172,7 @@ export default function SpitogatosFilters() {
 
 const handleClear = () => {
   setEmail("");
+  setSource("spitogatos");
   setPurpose("");
   setCategory("");
   setType("");
@@ -212,6 +212,22 @@ const handleClear = () => {
           {isLoading ? "Loading..." : "Load"}
         </button>
       </div>
+
+      {/* Source */}
+        <div>
+          <label className="text-sm font-medium text-gray-600 mb-1 block">
+            Property Source
+          </label>
+          <select
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+            >
+              <option value="spitogatos">Spitogatos</option>
+              <option value="prop360">Prop360</option>
+              <option value="both">Both</option>
+            </select>
+        </div>
 
       {/* Inputs */}
       <div className="flex flex-col gap-4 mb-6">
@@ -324,17 +340,17 @@ const handleClear = () => {
     Clear
   </button>
 
-  <button
-    onClick={handleSave}
-    disabled={isSaving}
-    className={`w-1/2 px-4 py-2 rounded-md text-white font-medium ${
-      isSaving
-        ? "bg-blue-300 cursor-not-allowed"
-        : "bg-blue-600 hover:bg-blue-700"
-    }`}
-  >
-    {isSaving ? "Saving..." : "Save Filters"}
-  </button>
+<button
+  onClick={handleSave}
+  disabled={isSaving || !email}
+  className={`w-1/2 px-4 py-2 rounded-md text-white font-medium ${
+    isSaving || !email
+      ? "bg-blue-300 cursor-not-allowed"
+      : "bg-blue-600 hover:bg-blue-700"
+  }`}
+>
+  {isSaving ? "Saving..." : "Save Filters"}
+</button>
 </div>
 
       {/* Status */}
