@@ -20,71 +20,173 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
+
 def build_query(filter_doc):
+    source = filter_doc.get("source", "spitogatos")
+
+    # -------------------------
+    # Base query
+    # -------------------------
     query = {
         "indicator": "properties",
-        "status": "active",
-        "spitogatos": {"$exists": True}
+        "status": "active"
     }
 
+    # -------------------------
+    # Source handling
+    # -------------------------
+    if source == "spitogatos":
+        query["spitogatos"] = {"$exists": True}
+
+    elif source == "prop360":
+        query["spitogatos"] = {"$exists": False}
+
+    # both → no restriction
+
+    # -------------------------
+    # Incremental processing
+    # -------------------------
     last_shared = filter_doc.get("lastSharedAt")
     if last_shared:
         query["metadata.createdAt"] = {"$gt": last_shared}
 
     # -------------------------
-    # Simple filters
-    # -------------------------
-    if filter_doc.get("purpose"):
-        query["spitogatos.purpose"] = filter_doc["purpose"]
-
-    if filter_doc.get("category"):
-        query["spitogatos.category"] = filter_doc["category"]
-
-    if filter_doc.get("area"):
-        query["spitogatos.area"] = filter_doc["area"]
-
-    # -------------------------
-    # Advanced filters (price/surface)
+    # Field-level conditions (AND across fields)
     # -------------------------
     and_conditions = []
 
-    # Price
+    purpose = filter_doc.get("purpose")
+    category = filter_doc.get("category")
+    area = filter_doc.get("area")
+
+    # -------------------------
+    # PURPOSE
+    # -------------------------
+    if purpose:
+        conds = []
+
+        if source in ["spitogatos", "both"]:
+            conds.append({"spitogatos.purpose": purpose})
+
+        if source in ["prop360", "both"]:
+            conds.append({
+                "data.field-1741536151680-7tt7lah7d": {
+                    "$regex": f"^{purpose}$",
+                    "$options": "i"
+                }
+            })
+
+        and_conditions.append({"$or": conds})
+
+    # -------------------------
+    # CATEGORY
+    # -------------------------
+    category_map = {
+        "home": "Residential",
+        "commercial": "Commercial",
+        "land": "Project",
+        "other": "Project",
+        "new-development": "Project",
+        "student-housing": "Project"
+    }
+
+    category_prop = category_map.get(category)
+
+    if category:
+        conds = []
+
+        if source in ["spitogatos", "both"]:
+            conds.append({"spitogatos.category": category})
+
+        if source in ["prop360", "both"] and category_prop:
+            conds.append({
+                "data.field-1741536164363-ai4m3m5r3": category_prop
+            })
+
+        and_conditions.append({"$or": conds})
+
+    # -------------------------
+    # AREA
+    # -------------------------
+    if area and area.strip():
+        conds = []
+
+        normalized_area = area.replace("-", " ")
+
+        if source in ["spitogatos", "both"]:
+            conds.append({"spitogatos.area": area})
+
+        if source in ["prop360", "both"]:
+            conds.append({
+                "data.field-1744021392093-03a295o25": {
+                    "$regex": normalized_area,
+                    "$options": "i"
+                }
+            })
+
+        and_conditions.append({"$or": conds})
+
+    # -------------------------
+    # PRICE
+    # -------------------------
     price_filter = filter_doc.get("price", {})
     if price_filter.get("min") is not None or price_filter.get("max") is not None:
-        price_condition = {}
+
+        spit_cond = {}
+        prop_cond = {}
 
         if price_filter.get("min") is not None:
-            price_condition["$gte"] = price_filter["min"]
+            spit_cond["$gte"] = price_filter["min"]
+            prop_cond["$gte"] = price_filter["min"]
 
         if price_filter.get("max") is not None:
-            price_condition["$lte"] = price_filter["max"]
+            spit_cond["$lte"] = price_filter["max"]
+            prop_cond["$lte"] = price_filter["max"]
 
-        and_conditions.append({
-            "$or": [
-                {"spitogatos.price": price_condition},
-                {"spitogatos.price": {"$exists": False}}
-            ]
-        })
+        conds = []
 
-    # Surface
+        if source in ["spitogatos", "both"]:
+            conds.append({"spitogatos.price": spit_cond})
+            conds.append({"spitogatos.price": {"$exists": False}})
+
+        if source in ["prop360", "both"]:
+            conds.append({"data.field-1741536272085-yi74oirib": prop_cond})
+            conds.append({"data.field-1741536272085-yi74oirib": {"$exists": False}})
+
+        and_conditions.append({"$or": conds})
+
+    # -------------------------
+    # SURFACE
+    # -------------------------
     surface_filter = filter_doc.get("surface", {})
     if surface_filter.get("min") is not None or surface_filter.get("max") is not None:
-        surface_condition = {}
+
+        spit_cond = {}
+        prop_cond = {}
 
         if surface_filter.get("min") is not None:
-            surface_condition["$gte"] = surface_filter["min"]
+            spit_cond["$gte"] = surface_filter["min"]
+            prop_cond["$gte"] = surface_filter["min"]
 
         if surface_filter.get("max") is not None:
-            surface_condition["$lte"] = surface_filter["max"]
+            spit_cond["$lte"] = surface_filter["max"]
+            prop_cond["$lte"] = surface_filter["max"]
 
-        and_conditions.append({
-            "$or": [
-                {"spitogatos.surface": surface_condition},
-                {"spitogatos.surface": {"$exists": False}}
-            ]
-        })
+        conds = []
 
-    # Attach conditions if any
+        if source in ["spitogatos", "both"]:
+            conds.append({"spitogatos.surface": spit_cond})
+            conds.append({"spitogatos.surface": {"$exists": False}})
+
+        if source in ["prop360", "both"]:
+            conds.append({"data.field-1741783862474-a5ordcxh2": prop_cond})
+            conds.append({"data.field-1741783862474-a5ordcxh2": {"$exists": False}})
+
+        and_conditions.append({"$or": conds})
+
+    # -------------------------
+    # Attach conditions
+    # -------------------------
     if and_conditions:
         query["$and"] = and_conditions
 
@@ -142,6 +244,7 @@ async def share_property_job(db, prop_db):
 
     processed = 0
     matched_clients = 0
+    properties_processed = 0
 
     async for filter_doc in cursor:
 
@@ -185,13 +288,15 @@ async def share_property_job(db, prop_db):
             }
         )
 
+        properties_processed += len(properties)
         matched_clients += 1
         processed += 1
 
     logger.info(
-        "Property match job completed | processed=%s | matched_clients=%s",
+        "Property match job completed | processed=%s | matched_clients=%s | properties_processed=%s",
         processed,
-        matched_clients
+        matched_clients,
+        properties_processed
     )
 
 def start_property_match_scheduler(db, prop_db):

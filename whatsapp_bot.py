@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from SharePropertyJob import start_property_match_scheduler
+from share_property_job import start_property_match_scheduler
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
