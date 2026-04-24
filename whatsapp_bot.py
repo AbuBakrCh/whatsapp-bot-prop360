@@ -3252,6 +3252,64 @@ async def get_share_property_job_status():
         "status": control.get("status") if control else "disable"
     }
 
+
+@fastapi_app.get("/property-filters")
+async def get_all_property_filters(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(5, ge=1, le=100)
+):
+    try:
+        filters_col = prop_db.propertyfilters
+
+        skip = (page - 1) * page_size
+
+        cursor = (
+            filters_col.find({})
+            .sort("_id", -1)   # DESC order
+            .skip(skip)
+            .limit(page_size)
+        )
+
+        results = []
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            results.append(doc)
+
+        total = await filters_col.count_documents({})
+
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "data": results
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+@fastapi_app.delete("/property-filters/{email}")
+async def delete_property_filter(email: str):
+    try:
+        if not email:
+            return {"error": "Email is required."}
+
+        filters_col = prop_db.propertyfilters
+
+        result = await filters_col.delete_one({"clientEmail": email})
+
+        if result.deleted_count == 0:
+            return {"message": "No filter found for this email."}
+
+        return {
+            "message": "Property filter deleted successfully.",
+            "deleted": True
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
 def has_changes(existing, new_doc):
     if not existing:
         return True

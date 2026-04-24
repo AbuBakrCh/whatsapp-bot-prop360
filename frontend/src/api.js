@@ -356,3 +356,32 @@ export async function updateSharePropertyJobStatus(status) {
     return { error: "Request failed." };
   }
 }
+
+export async function getAllPropertyFilters(page = 1, limit = 10) {
+  try {
+    const response = await axios.get(
+      `${BASE}/property-filters`,
+      {
+        params: { page, page_size: limit }
+      }
+    );
+
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch filters",
+    };
+  }
+}
+
+export async function deletePropertyFilter(email) {
+  try {
+    const res = await axios.delete(`${BASE}/property-filters/${email}`);
+    return res.data;
+  } catch (err) {
+    return { error: "Failed to delete filter" };
+  }
+}
