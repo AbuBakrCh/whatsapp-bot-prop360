@@ -84,7 +84,7 @@ class SpitogatosCrawler:
     # =========================
     # EXTRACT PROPERTY DATA
     # =========================
-    def extract_property_data(self, html: str) -> dict:
+    def extract_property_data(self, url: str, html: str) -> dict:
         soup = BeautifulSoup(html, "lxml")
 
         result = {
@@ -94,6 +94,8 @@ class SpitogatosCrawler:
             "features": {},
             "amenities": [],
             "images": [],
+            "agency": None,
+            "document_folder_number": None
         }
 
         title_el = soup.select_one("h1.property__title")
@@ -134,7 +136,60 @@ class SpitogatosCrawler:
                     "alt": img.get("alt", "")
                 })
 
+        agency_info = self.extract_agency_info(soup)
+        agency_info["phone"] = self.extract_phone(html)
+        result["agency"] = self.format_agency(agency_info)
+
+        result["document_folder_number"] = url
         return result
+
+    def extract_agency_info(self, soup: BeautifulSoup) -> dict:
+        agency = {
+            "name": None,
+            "website": None,
+            "agent_name": None,
+        }
+
+        # Agency name
+        name_el = soup.select_one(".property__agency__info h3 a")
+        if name_el:
+            agency["name"] = name_el.get_text(strip=True)
+
+        # Website
+        website_el = soup.select_one(".property__agency__website")
+        if website_el:
+            agency["website"] = website_el.get("href")
+
+        # Agent name (person)
+        agent_el = soup.select_one(".property__agency__contact")
+        if agent_el:
+            agency["agent_name"] = agent_el.get_text(strip=True)
+
+        return agency
+
+    def extract_phone(self, html: str) -> str | None:
+        # Match international phone numbers like +302111995637
+        match = re.search(r"\+\d{8,15}", html)
+        if match:
+            return match.group(0)
+        return None
+
+    def format_agency(self, agency: dict) -> str:
+        parts = []
+
+        if agency.get("name"):
+            parts.append(agency["name"])
+
+        if agency.get("agent_name"):
+            parts.append(f"Agent: {agency['agent_name']}")
+
+        if agency.get("phone"):
+            parts.append(f"Phone: {agency['phone']}")
+
+        if agency.get("website"):
+            parts.append(f"Website: {agency['website']}")
+
+        return " | ".join(parts)
 
     # =========================
     # DESCRIPTION
@@ -183,7 +238,7 @@ class SpitogatosCrawler:
             return val
 
         return {
-            "Title": data.get("title"),
+            "Title": f"{data.get('title')} - {data.get('address')}",
             "Description": self.build_description_html(data),
             "Address": data.get("address"),
 
@@ -197,7 +252,9 @@ class SpitogatosCrawler:
             "Floor": features.get("Floor"),
             "Heating System": features.get("Heating system"),
 
-            "isPublic": False
+            "isPublic": False,
+            "Property Owner Real Estate Agent": data.get("agency"),
+            "Document Folder Number": data.get("document_folder_number"),
         }
 
     # =========================
@@ -325,7 +382,7 @@ class SpitogatosCrawler:
                             if not property_html:
                                 continue
 
-                            data = self.extract_property_data(property_html)
+                            data = self.extract_property_data(property_url, property_html)
 
                             data = {
                                 k: v for k, v in data.items()
