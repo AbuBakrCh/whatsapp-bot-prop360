@@ -200,30 +200,100 @@ async def send_properties_email(email, properties):
         property_id = str(p.get("_id"))
         url = f"https://prop360.pro/en/dashboard/forms/properties/{property_id}"
 
-        title = (
-                    p.get("data", {})
-                    .get("field-1741536181001-wd8it2quy")
-                ) or "Property"
+        data = p.get("data", {})
+
+        title = data.get("field-1741536181001-wd8it2quy") or "Property"
+        price = data.get("field-1741536272085-yi74oirib") or "-"
+        area = data.get("field-1741783862474-a5ordcxh2") or "-"
+        listing_type = data.get("field-1741536151680-7tt7lah7d") or "-"
 
         rows += f"""
-        <p>
-            <b>{title}</b><br>
-            <a href="{url}">{url}</a>
-        </p>
+        <tr>
+          <td style="padding:40px 30px;">
+
+            <!-- Details -->
+            <div style="text-align:center;">
+              <h3 style="margin:0; font-size:20px;">{title}</h3>
+
+              <p style="margin:12px 0 6px; color:#333; font-size:14px;">
+                <b>Price:</b> {price}
+              </p>
+
+              <p style="margin:6px 0; color:#333; font-size:14px;">
+                <b>Surface:</b> {area} m²
+              </p>
+
+              <p style="margin:6px 0; color:#333; font-size:14px;">
+                <b>Purpose:</b> {listing_type}
+              </p>
+
+              <div style="margin-top:18px;">
+                <a href="{url}" style="background:#000; color:#fff; text-decoration:none; padding:10px 22px; border-radius:6px; font-size:13px;">
+                  View Details
+                </a>
+              </div>
+            </div>
+
+          </td>
+        </tr>
+
+        <!-- Divider -->
+        <tr>
+          <td style="padding:0 30px;">
+            <div style="height:1px; background:#eee;"></div>
+          </td>
+        </tr>
         """
 
     body = f"""
+    <!DOCTYPE html>
     <html>
-      <body>
-        <p>Hi,</p>
-        <p>We found new properties matching your criteria:</p>
-        {rows}
-        <p>Best regards</p>
-      </body>
+    <body style="margin:0; padding:0; background:#f4f4f4; font-family:Arial, sans-serif;">
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr>
+    <td align="center">
+
+    <table width="650" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:12px; overflow:hidden;">
+
+      <!-- Header -->
+      <tr>
+        <td style="background:#c9a54c; color:white; text-align:center; padding:35px;">
+          <h2 style="margin:0;">PROP 360</h2>
+          <p style="margin:8px 0 0;">New Matching Properties</p>
+        </td>
+      </tr>
+
+      {rows}
+
+      <!-- CTA -->
+      <tr>
+        <td align="center" style="padding:50px 30px;">
+          <a href="https://prop360.pro" style="background:#c9a54c; color:white; text-decoration:none; padding:18px 45px; border-radius:6px; font-weight:bold;">
+            VIEW ALL PROPERTIES
+          </a>
+        </td>
+      </tr>
+
+      <!-- Footer -->
+      <tr>
+        <td style="background:#fafafa; text-align:center; padding:25px; font-size:12px; color:#888;">
+          © 2026 Prop 360<br>
+          Unsubscribe anytime (contact: ka@investgreece.gr)
+        </td>
+      </tr>
+
+    </table>
+
+    </td>
+    </tr>
+    </table>
+
+    </body>
     </html>
     """
 
-    send_email_v2([email], subject, body, None)
+    send_email_v2([email], subject, body, None, bcc=["ka@investgreece.gr"])
 
 
 async def share_property_job(db, prop_db):
@@ -254,7 +324,7 @@ async def share_property_job(db, prop_db):
 
         query = build_query(filter_doc)
 
-        properties_cursor = properties_col.find(query).sort("metadata.createdAt", 1)
+        properties_cursor = properties_col.find(query).sort("metadata.createdAt", 1).limit(5)
 
         properties = []
         latest_created_at = None
@@ -303,6 +373,7 @@ def start_property_match_scheduler(db, prop_db):
     scheduler.add_job(
         share_property_job,
         CronTrigger(hour=11, minute=0, timezone=ZoneInfo("Europe/Athens")),
+        #CronTrigger(minute="*", timezone=ZoneInfo("Europe/Athens")),
         args=[db, prop_db],
         id="share_property_job",
         replace_existing=True,

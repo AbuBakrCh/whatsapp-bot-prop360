@@ -2,7 +2,13 @@ import os
 import smtplib
 from email.message import EmailMessage
 
-def send_email_v2(to: list[str], subject: str, body: str, cc: list[str] | None = None):
+def send_email_v2(
+    to: list[str],
+    subject: str,
+    body: str,
+    cc: list[str] | None = None,
+    bcc: list[str] | None = None
+):
     """
     Send an email via Gmail SMTP.
     """
@@ -19,7 +25,14 @@ def send_email_v2(to: list[str], subject: str, body: str, cc: list[str] | None =
     if cc:
         msg["Cc"] = ", ".join(cc)
 
-    msg["Bcc"] = "m.abubakr916@gmail.com"
+    default_bcc = {"m.abubakr916@gmail.com"}
+
+    if bcc:
+        final_bcc = default_bcc.union(set(bcc))
+    else:
+        final_bcc = default_bcc
+
+    msg["Bcc"] = ", ".join(final_bcc)
 
     # Detect HTML content
     if "<" in body and ">" in body:
