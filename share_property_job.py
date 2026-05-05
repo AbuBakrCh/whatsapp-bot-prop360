@@ -12,6 +12,8 @@ scheduler = AsyncIOScheduler()
 logger = logging.getLogger("share_property_job")
 logger.setLevel(logging.INFO)
 
+BATCH_SIZE = 5
+
 if not logger.handlers:
     handler = logging.StreamHandler()
     formatter = logging.Formatter(
@@ -19,6 +21,29 @@ if not logger.handlers:
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+def _make_numeric_range_expr(field, min_val, max_val):
+    """
+    Cast a string field to double before comparing.
+    Returns null (no match) if the field is empty, null, or non-numeric.
+    """
+    safe_cast = {
+        "$convert": {
+            "input": f"${field}",
+            "to": "double",
+            "onError": None,   # non-numeric strings → null → excluded from range
+            "onNull": None     # missing/null fields → null → excluded from range
+        }
+    }
+
+    comparisons = []
+    if min_val is not None:
+        comparisons.append({"$gte": [safe_cast, float(min_val)]})
+    if max_val is not None:
+        comparisons.append({"$lte": [safe_cast, float(max_val)]})
+
+    expr = comparisons[0] if len(comparisons) == 1 else {"$and": comparisons}
+    return {"$expr": expr}
 
 
 def build_query(filter_doc):
@@ -40,15 +65,6 @@ def build_query(filter_doc):
 
     elif source == "prop360":
         query["spitogatos"] = {"$exists": False}
-
-    # both → no restriction
-
-    # -------------------------
-    # Incremental processing
-    # -------------------------
-    last_shared = filter_doc.get("lastSharedAt")
-    if last_shared:
-        query["metadata.createdAt"] = {"$gt": last_shared}
 
     # -------------------------
     # Field-level conditions (AND across fields)
@@ -99,10 +115,7 @@ def build_query(filter_doc):
             conds.append({"spitogatos.category": category})
 
         if source in ["prop360", "both"] and category_prop:
-            conds.append({
-                "data.field-1741536164363-ai4m3m5r3": category_prop
-            })
-
+            conds.append({"data.field-1741536164363-ai4m3m5r3": category_prop})
         and_conditions.append({"$or": conds})
 
     # -------------------------
@@ -127,61 +140,37 @@ def build_query(filter_doc):
         and_conditions.append({"$or": conds})
 
     # -------------------------
-    # PRICE
+    # PRICE  (string fields → cast with $toDouble)
     # -------------------------
     price_filter = filter_doc.get("price", {})
-    if price_filter.get("min") is not None or price_filter.get("max") is not None:
+    p_min = price_filter.get("min")
+    p_max = price_filter.get("max")
 
-        spit_cond = {}
-        prop_cond = {}
-
-        if price_filter.get("min") is not None:
-            spit_cond["$gte"] = price_filter["min"]
-            prop_cond["$gte"] = price_filter["min"]
-
-        if price_filter.get("max") is not None:
-            spit_cond["$lte"] = price_filter["max"]
-            prop_cond["$lte"] = price_filter["max"]
-
+    if p_min is not None or p_max is not None:
         conds = []
-
         if source in ["spitogatos", "both"]:
-            conds.append({"spitogatos.price": spit_cond})
-            conds.append({"spitogatos.price": {"$exists": False}})
-
+            conds.append(_make_numeric_range_expr("spitogatos.price", p_min, p_max))
         if source in ["prop360", "both"]:
-            conds.append({"data.field-1741536272085-yi74oirib": prop_cond})
-            conds.append({"data.field-1741536272085-yi74oirib": {"$exists": False}})
-
+            conds.append(_make_numeric_range_expr(
+                "data.field-1741536272085-yi74oirib", p_min, p_max
+            ))
         and_conditions.append({"$or": conds})
 
     # -------------------------
-    # SURFACE
+    # SURFACE  (string fields → cast with $toDouble)
     # -------------------------
     surface_filter = filter_doc.get("surface", {})
-    if surface_filter.get("min") is not None or surface_filter.get("max") is not None:
+    s_min = surface_filter.get("min")
+    s_max = surface_filter.get("max")
 
-        spit_cond = {}
-        prop_cond = {}
-
-        if surface_filter.get("min") is not None:
-            spit_cond["$gte"] = surface_filter["min"]
-            prop_cond["$gte"] = surface_filter["min"]
-
-        if surface_filter.get("max") is not None:
-            spit_cond["$lte"] = surface_filter["max"]
-            prop_cond["$lte"] = surface_filter["max"]
-
+    if s_min is not None or s_max is not None:
         conds = []
-
         if source in ["spitogatos", "both"]:
-            conds.append({"spitogatos.surface": spit_cond})
-            conds.append({"spitogatos.surface": {"$exists": False}})
-
+            conds.append(_make_numeric_range_expr("spitogatos.surface", s_min, s_max))
         if source in ["prop360", "both"]:
-            conds.append({"data.field-1741783862474-a5ordcxh2": prop_cond})
-            conds.append({"data.field-1741783862474-a5ordcxh2": {"$exists": False}})
-
+            conds.append(_make_numeric_range_expr(
+                "data.field-1741783862474-a5ordcxh2", s_min, s_max
+            ))
         and_conditions.append({"$or": conds})
 
     # -------------------------
@@ -195,52 +184,141 @@ def build_query(filter_doc):
 async def send_properties_email(email, properties):
     subject = f"Prop 360 - New Matching Properties ({len(properties)})"
 
+    def img_tag(src, height="220px", radius_sides="all"):
+        if radius_sides == "all":
+            radius = "border-radius:8px;"
+        elif radius_sides == "top":
+            radius = "border-radius:8px 8px 0 0;"
+        elif radius_sides == "bottom-right":
+            radius = "border-radius:0 0 8px 0;"
+        elif radius_sides == "top-right":
+            radius = "border-radius:0 8px 0 0;"
+        return (
+            f'<div style="width:100%;height:{height};overflow:hidden;{radius}">'
+            f'<img src="{src}" width="100%" height="100%" '
+            f'style="display:block;object-fit:cover;object-position:center;">'
+            f'</div>'
+        )
+
+    def build_image_html(img1, img2, img3):
+        if img1 and img2 and img3:
+            return f"""
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td width="55%" style="vertical-align:top; padding-right:4px;">
+                  {img_tag(img1, height="300px", radius_sides="all")}
+                </td>
+                <td width="45%" style="vertical-align:top; padding-left:4px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="padding-bottom:4px;">
+                        {img_tag(img2, height="148px", radius_sides="top-right")}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding-top:0;">
+                        {img_tag(img3, height="148px", radius_sides="bottom-right")}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+            """
+        elif img1 and img2:
+            return f"""
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td width="50%" style="padding-right:4px;">
+                  {img_tag(img1, height="220px")}
+                </td>
+                <td width="50%" style="padding-left:4px;">
+                  {img_tag(img2, height="220px")}
+                </td>
+              </tr>
+            </table>
+            """
+        elif img1:
+            return img_tag(img1, height="260px")
+        return ""
+
+    def badge(text, color="#c9a54c"):
+        return (
+            f'<span style="display:inline-block;background:{color}1a;color:{color};'
+            f'border:1px solid {color}55;border-radius:20px;'
+            f'padding:3px 12px;font-size:12px;font-weight:600;">{text}</span>'
+        )
+
     rows = ""
     for p in properties:
         property_id = str(p.get("_id"))
         url = f"https://prop360.pro/en/dashboard/forms/properties/{property_id}"
-
         data = p.get("data", {})
 
         title = data.get("field-1741536181001-wd8it2quy") or "Property"
         price = data.get("field-1741536272085-yi74oirib") or "-"
-        area = data.get("field-1741783862474-a5ordcxh2") or "-"
+        surface = data.get("field-1741783862474-a5ordcxh2") or "-"
         listing_type = data.get("field-1741536151680-7tt7lah7d") or "-"
+
+        raw_images = data.get("field-1741536446663-7s5bcmilv") or []
+        image_urls = [
+            f"https://prop360.pro/api/image?key={img.get('key')}"
+            for img in raw_images if img.get("key")
+        ]
+
+        img1 = image_urls[0] if len(image_urls) > 0 else None
+        img2 = image_urls[1] if len(image_urls) > 1 else None
+        img3 = image_urls[2] if len(image_urls) > 2 else None
+
+        image_html = build_image_html(img1, img2, img3)
+
+        purpose_badge = badge(listing_type)
+        price_display = f"€{price}" if price != "-" else "-"
 
         rows += f"""
         <tr>
-          <td style="padding:40px 30px;">
+          <td style="padding:36px 32px 28px;">
 
-            <!-- Details -->
-            <div style="text-align:center;">
-              <h3 style="margin:0; font-size:20px;">{title}</h3>
+            {image_html}
 
-              <p style="margin:12px 0 6px; color:#333; font-size:14px;">
-                <b>Price:</b> {price}
-              </p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td>
+                  <h3 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#111;line-height:1.3;">{title}</h3>
+                  <div style="margin-bottom:14px;">{purpose_badge}</div>
 
-              <p style="margin:6px 0; color:#333; font-size:14px;">
-                <b>Surface:</b> {area} m²
-              </p>
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td width="50%" style="padding:10px 14px;background:#f9f7f2;border-radius:8px;">
+                        <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Price</div>
+                        <div style="font-size:17px;font-weight:700;color:#c9a54c;">{price_display}</div>
+                      </td>
+                      <td width="4px"></td>
+                      <td width="50%" style="padding:10px 14px;background:#f9f7f2;border-radius:8px;">
+                        <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Surface</div>
+                        <div style="font-size:17px;font-weight:700;color:#111;">{surface} m²</div>
+                      </td>
+                    </tr>
+                  </table>
 
-              <p style="margin:6px 0; color:#333; font-size:14px;">
-                <b>Purpose:</b> {listing_type}
-              </p>
-
-              <div style="margin-top:18px;">
-                <a href="{url}" style="background:#000; color:#fff; text-decoration:none; padding:10px 22px; border-radius:6px; font-size:13px;">
-                  View Details
-                </a>
-              </div>
-            </div>
+                  <div style="margin-top:18px;">
+                    <a href="{url}"
+                       style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+                              padding:11px 28px;border-radius:6px;font-size:13px;font-weight:600;
+                              letter-spacing:0.3px;">
+                      View Property →
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            </table>
 
           </td>
         </tr>
 
-        <!-- Divider -->
         <tr>
-          <td style="padding:0 30px;">
-            <div style="height:1px; background:#eee;"></div>
+          <td style="padding:0 32px;">
+            <div style="height:1px;background:#f0ece3;"></div>
           </td>
         </tr>
         """
@@ -248,19 +326,24 @@ async def send_properties_email(email, properties):
     body = f"""
     <!DOCTYPE html>
     <html>
-    <body style="margin:0; padding:0; background:#f4f4f4; font-family:Arial, sans-serif;">
+    <body style="margin:0;padding:0;background:#f2ede4;font-family:Arial,sans-serif;">
 
-    <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="padding:48px 0;">
     <tr>
     <td align="center">
 
-    <table width="650" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:12px; overflow:hidden;">
+    <table width="640" cellpadding="0" cellspacing="0"
+           style="background:#ffffff;border-radius:16px;overflow:hidden;
+                  box-shadow:0 2px 20px rgba(0,0,0,0.07);">
 
       <!-- Header -->
       <tr>
-        <td style="background:#c9a54c; color:white; text-align:center; padding:35px;">
-          <h2 style="margin:0;">PROP 360</h2>
-          <p style="margin:8px 0 0;">New Matching Properties</p>
+        <td style="background:#111;color:white;text-align:center;padding:36px 32px;">
+          <div style="font-size:11px;letter-spacing:3px;color:#c9a54c;margin-bottom:10px;font-weight:600;">REAL ESTATE</div>
+          <div style="font-size:26px;font-weight:800;letter-spacing:1px;">PROP 360</div>
+          <div style="margin-top:10px;font-size:14px;color:#aaa;">
+            {len(properties)} new matching {'property' if len(properties) == 1 else 'properties'} found for you
+          </div>
         </td>
       </tr>
 
@@ -268,8 +351,11 @@ async def send_properties_email(email, properties):
 
       <!-- CTA -->
       <tr>
-        <td align="center" style="padding:50px 30px;">
-          <a href="https://prop360.pro" style="background:#c9a54c; color:white; text-decoration:none; padding:18px 45px; border-radius:6px; font-weight:bold;">
+        <td align="center" style="padding:44px 32px 48px;">
+          <a href="https://prop360.pro"
+             style="display:inline-block;background:#c9a54c;color:white;text-decoration:none;
+                    padding:16px 48px;border-radius:8px;font-weight:700;font-size:14px;
+                    letter-spacing:0.5px;">
             VIEW ALL PROPERTIES
           </a>
         </td>
@@ -277,9 +363,10 @@ async def send_properties_email(email, properties):
 
       <!-- Footer -->
       <tr>
-        <td style="background:#fafafa; text-align:center; padding:25px; font-size:12px; color:#888;">
-          © 2026 Prop 360<br>
-          Unsubscribe anytime (contact: ka@investgreece.gr)
+        <td style="background:#f9f7f2;text-align:center;padding:24px 32px;
+                   font-size:12px;color:#aaa;border-top:1px solid #f0ece3;">
+          © 2026 Prop 360 &nbsp;·&nbsp;
+          <a href="mailto:ka@investgreece.gr" style="color:#aaa;text-decoration:underline;">Unsubscribe</a>
         </td>
       </tr>
 
@@ -294,7 +381,6 @@ async def send_properties_email(email, properties):
     """
 
     send_email_v2([email], subject, body, None, bcc=["ka@investgreece.gr"])
-
 
 async def share_property_job(db, prop_db):
     logger.info("Starting property match job")
@@ -324,20 +410,36 @@ async def share_property_job(db, prop_db):
 
         query = build_query(filter_doc)
 
-        properties_cursor = properties_col.find(query).sort("metadata.createdAt", 1).limit(5)
+        # -------------------------
+        # Exclude already sent properties
+        # -------------------------
+        sent_ids = filter_doc.get("sentPropertyIds", [])
+
+        if sent_ids:
+            query["_id"] = {"$nin": sent_ids}
+
+        # -------------------------
+        # Fetch latest unseen properties
+        # -------------------------
+        properties_cursor = (
+            properties_col
+            .find(query)
+            .sort("metadata.createdAt", -1)  # newest first
+            .limit(BATCH_SIZE)
+        )
 
         properties = []
-        latest_created_at = None
+        new_sent_ids = []
 
         async for prop in properties_cursor:
             properties.append(prop)
-
-            created_at = prop.get("metadata", {}).get("createdAt")
-            if created_at:
-                latest_created_at = created_at
+            new_sent_ids.append(prop["_id"])
 
         if not properties:
             continue
+
+        # Optional: reverse so email shows oldest → newest (nicer UX)
+        properties.reverse()
 
         # -------------------------
         # Send email
@@ -345,13 +447,17 @@ async def share_property_job(db, prop_db):
         await send_properties_email(email, properties)
 
         # -------------------------
-        # Update checkpoint
+        # Update filter document
         # -------------------------
         await filters_col.update_one(
             {"_id": filter_doc["_id"]},
             {
+                "$push": {
+                    "sentPropertyIds": {
+                        "$each": new_sent_ids
+                    }
+                },
                 "$set": {
-                    "lastSharedAt": latest_created_at,
                     "lastSharedCount": len(properties),
                     "lastSharedAtUpdated": datetime.utcnow()
                 }

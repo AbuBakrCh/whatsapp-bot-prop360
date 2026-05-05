@@ -15,7 +15,8 @@ from email.message import EmailMessage
 from time import time
 from typing import Any
 from urllib.parse import quote
-
+from bson import json_util
+import json
 import google.generativeai as genai
 import httpx
 import math
@@ -3197,7 +3198,6 @@ async def add_property_filter(payload: dict):
         traceback.print_exc()
         return {"error": str(e)}
 
-
 @fastapi_app.get("/property-filters/{email}")
 async def get_property_filter(email: str):
     try:
@@ -3211,12 +3211,10 @@ async def get_property_filter(email: str):
         if not doc:
             return {"message": "No filter found for this email."}
 
-        # Convert ObjectId to string
-        doc["_id"] = str(doc["_id"])
-
-        return doc
+        return json.loads(json_util.dumps(doc))
 
     except Exception as e:
+        import traceback
         traceback.print_exc()
         return {"error": str(e)}
 
@@ -3252,7 +3250,6 @@ async def get_share_property_job_status():
         "status": control.get("status") if control else "disable"
     }
 
-
 @fastapi_app.get("/property-filters")
 async def get_all_property_filters(
     page: int = Query(1, ge=1),
@@ -3265,15 +3262,16 @@ async def get_all_property_filters(
 
         cursor = (
             filters_col.find({})
-            .sort("_id", -1)   # DESC order
+            .sort("_id", -1)
             .skip(skip)
             .limit(page_size)
         )
 
         results = []
+
         async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            results.append(doc)
+            # ✅ FIX: serialize each document properly
+            results.append(json.loads(json_util.dumps(doc)))
 
         total = await filters_col.count_documents({})
 
