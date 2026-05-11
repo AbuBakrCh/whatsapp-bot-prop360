@@ -327,7 +327,9 @@ class SpitogatosCrawler:
     async def is_already_processed(self, property_url: str) -> bool:
         doc = await self.collection.find_one({
             "spitogatos.propertyUrl": property_url,
-            "status": "active"
+            "status": {
+                "$in": ["active", "OffMarket"]
+            }
         })
         return doc is not None
 
@@ -400,7 +402,9 @@ class SpitogatosCrawler:
                                 {"_id": ObjectId(property_id)},
                                 {
                                     "$set": {
-                                        "spitogatos": characteristics
+                                        "spitogatos": characteristics,
+                                        "isPublic": True,
+                                        "status": "OffMarket"
                                     }
                                 }
                             )

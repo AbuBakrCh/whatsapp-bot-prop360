@@ -54,7 +54,10 @@ def build_query(filter_doc):
     # -------------------------
     query = {
         "indicator": "properties",
-        "status": "active"
+        "isPublic": True,
+        "status": {
+            "$in": ["active", "OffMarket"]
+        }
     }
 
     # -------------------------
@@ -252,7 +255,8 @@ async def send_properties_email(email, properties):
     rows = ""
     for p in properties:
         property_id = str(p.get("_id"))
-        url = f"https://prop360.pro/en/dashboard/forms/properties/{property_id}"
+        merchant_id = str(p.get("merchantId"))
+        url = f"https://prop360.pro/en/v/{merchant_id}/{property_id}"
         data = p.get("data", {})
 
         title = data.get("field-1741536181001-wd8it2quy") or "Property"
