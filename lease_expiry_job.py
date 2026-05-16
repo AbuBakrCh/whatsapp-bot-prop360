@@ -24,7 +24,10 @@ if not logger.handlers:
 
 LEASE_FIELD = "field-1751378159230-z600hychf"
 LEASE_END = "column-1751378319963-1aaste5j5"
-LEASE_EXPIRY_DAYS = int(os.getenv("LEASE_EXPIRY_DAYS", "15"))
+
+# Alert windows in days
+LEASE_EXPIRY_ALERTS = [60, 15]
+
 
 def _is_job_enabled():
     return os.getenv("LEASE_EXPIRY_JOB_ENABLED", "true").lower() == "true"
@@ -35,7 +38,15 @@ async def get_job_recipients(db, job_id: str):
         return []
     return doc.get("recipients", [])
 
-async def send_email(db, property_title_full, property_title, property_url, lease_end_date_utc):
+
+async def send_email(
+    db,
+    property_title_full,
+    property_title,
+    property_url,
+    lease_end_date_utc,
+    days_before
+):
     """
     Sends lease expiry notification email
     lease_end_date_utc: datetime in UTC
@@ -54,7 +65,7 @@ async def send_email(db, property_title_full, property_title, property_url, leas
 
             <p>
             This is an intimation that the lease agreement for the following property
-            is expected to expire within the next <b>{LEASE_EXPIRY_DAYS} days</b>.
+            is expected to expire within the next <b>{days_before} days</b>.
             </p>
 
             <p>
@@ -86,10 +97,11 @@ async def send_email(db, property_title_full, property_title, property_url, leas
         ]
 
     logger.info(
-        "Sending lease expiry email | title=%s | expiry=%s | recipients=%s",
+        "Sending lease expiry email | title=%s | expiry=%s | recipients=%s | days_before=%s",
         property_title,
         lease_end_greece,
         recipients,
+        days_before,
     )
 
     loop = asyncio.get_running_loop()
@@ -113,7 +125,6 @@ async def lease_expiry_check(db, prop_db):
     logger.info("Starting lease expiry job")
 
     today = datetime.now(timezone.utc)
-    cutoff = today + timedelta(days=LEASE_EXPIRY_DAYS)
 
     formdatas_col = prop_db.formdatas
 
@@ -121,7 +132,6 @@ async def lease_expiry_check(db, prop_db):
         {
             "indicator": "properties",
             "status": "active",
-            "metadata.leaseExpiryNotified": {"$ne": True},
             f"data.{LEASE_FIELD}": {"$exists": True}
         }
     )
@@ -153,28 +163,58 @@ async def lease_expiry_check(db, prop_db):
                 logger.warning("Invalid date format | %s", end_date_str)
                 continue
 
-            if today <= end_date <= cutoff: #Is the lease expiring between today and 15 days from now?
+            property_title_full = doc.get(
+                "data", {}
+            ).get(
+                "field-1741536181001-wd8it2quy",
+                "Property Lease Expiring Soon"
+            )
 
-                property_title_full = doc.get("data", {}).get("field-1741536181001-wd8it2quy", "Property Lease Expiring Soon")
-                property_title = property_title_full.split("-")[0].strip()
-                property_id = doc["_id"]
+            property_title = property_title_full.split("-")[0].strip()
 
-                property_url = f"https://prop360.pro/dashboard/forms/properties/{property_id}"
+            property_id = doc["_id"]
 
-                await send_email(db, property_title_full, property_title, property_url, end_date)
+            property_url = (
+                f"https://prop360.pro/dashboard/forms/properties/{property_id}"
+            )
 
-                await formdatas_col.update_one(
-                    {"_id": property_id},
-                    {
-                        "$set": {
-                            "metadata.leaseExpiryNotified": True,
-                            "metadata.leaseExpiryNotifiedAt": datetime.utcnow()
+            metadata = doc.get("metadata", {})
+
+            for days_before in LEASE_EXPIRY_ALERTS:
+
+                notification_key = f"leaseExpiry{days_before}DaysNotified"
+
+                already_notified = metadata.get(notification_key)
+
+                if already_notified:
+                    continue
+
+                cutoff_start = today + timedelta(days=days_before - 1)
+                cutoff_end = today + timedelta(days=days_before)
+
+                # Is the lease expiring within this alert window?
+                if cutoff_start <= end_date <= cutoff_end:
+
+                    await send_email(
+                        db,
+                        property_title_full,
+                        property_title,
+                        property_url,
+                        end_date,
+                        days_before
+                    )
+
+                    await formdatas_col.update_one(
+                        {"_id": property_id},
+                        {
+                            "$set": {
+                                f"metadata.{notification_key}": True,
+                                f"metadata.{notification_key}At": datetime.utcnow()
+                            }
                         }
-                    }
-                )
+                    )
 
-                notified += 1
-                break
+                    notified += 1
 
         processed += 1
 
