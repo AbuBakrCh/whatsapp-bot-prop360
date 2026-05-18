@@ -33,7 +33,7 @@ from fastapi import BackgroundTasks
 from fastapi import FastAPI, Request, HTTPException, Body, Query
 from fastapi import Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from share_property_job import start_property_match_scheduler
@@ -45,6 +45,7 @@ from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
 from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
+from services.cashflow_ledger import fetch_ledger_for_property, build_ledger_excel
 
 fastapi_app = FastAPI()
 
@@ -2272,6 +2273,37 @@ async def delete_timetables(payload: dict):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+
+
+@fastapi_app.get("/cashflows/ledger")
+async def get_cashflow_ledger(propertyId: str = Query(..., min_length=1)):
+    try:
+        ledger = await fetch_ledger_for_property(prop_db, propertyId)
+        return ledger
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.get("/cashflows/ledger/export")
+async def export_cashflow_ledger(propertyId: str = Query(..., min_length=1)):
+    try:
+        ledger = await fetch_ledger_for_property(prop_db, propertyId)
+        excel_bytes = build_ledger_excel(ledger)
+        filename = f"cashflow-ledger-{propertyId}.xlsx"
+        return StreamingResponse(
+            io.BytesIO(excel_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.post("/cashflows/add")
 async def add_cashflows(payload: dict):

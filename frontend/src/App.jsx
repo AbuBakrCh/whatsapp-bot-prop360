@@ -136,8 +136,15 @@ return (
           to="/spitogatos"
           className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition"
         >
-    Spitogatos
-  </Link>
+          Spitogatos
+        </Link>
+
+        <Link
+          to="/ledger"
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition"
+        >
+          Ledger
+        </Link>
 
         <span className="text-xs text-gray-400">
           v{__APP_VERSION__}

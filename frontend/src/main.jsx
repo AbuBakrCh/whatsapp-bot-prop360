@@ -5,6 +5,7 @@ import App from "./App";
 import Utilities from "./pages/Utilities";
 import ImportantLinks from './pages/ImportantLinks'
 import Spitogatos from "./pages/Spitogatos";
+import Ledger from "./pages/Ledger";
 import "./styles.css";
 
 createRoot(document.getElementById("root")).render(
@@ -14,6 +15,7 @@ createRoot(document.getElementById("root")).render(
       <Route path="/utilities" element={<Utilities />} />
       <Route path="/important-links" element={<ImportantLinks />} />
       <Route path="/spitogatos" element={<Spitogatos />} />
+      <Route path="/ledger" element={<Ledger />} />
     </Routes>
   </BrowserRouter>
 );
