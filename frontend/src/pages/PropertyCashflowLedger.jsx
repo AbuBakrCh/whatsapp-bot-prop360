@@ -1,5 +1,102 @@
 import React, { useState } from "react";
+import { ExternalLink } from "lucide-react";
 import { getCashflowLedger, exportCashflowLedger } from "../api";
+
+const ACTIVITY_PAGE_SIZE = 10;
+
+function ActivitiesTable({ activities, onPageChange, loading }) {
+  const rows = activities?.rows || [];
+  const page = activities?.page ?? 1;
+  const totalPages = activities?.totalPages ?? 1;
+  const totalCount = activities?.totalCount ?? 0;
+
+  return (
+    <div className="w-full mt-8">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-lg font-semibold text-blue-700">Activities</h3>
+        {totalCount > 0 && (
+          <span className="text-sm text-gray-500">{totalCount} total</span>
+        )}
+      </div>
+      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 w-40">Date</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-700 w-12">
+                <span className="sr-only">Open</span>
+              </th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700">
+                Activity Description
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={3} className="px-3 py-6 text-center text-gray-400">
+                  Loading activities...
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="px-3 py-6 text-center text-gray-400">
+                  No activities
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={row.id || `${row.date}-${index}`} className="border-t border-slate-100">
+                  <td className="px-3 py-2 whitespace-nowrap align-top">{row.date}</td>
+                  <td className="px-3 py-2 text-center align-top">
+                    {row.url ? (
+                      <a
+                        href={row.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open activity in Prop360"
+                        className="inline-flex text-blue-600 hover:text-blue-800"
+                      >
+                        <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 whitespace-pre-wrap">{row.description || "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center gap-2 mt-4">
+          <button
+            type="button"
+            onClick={() => onPageChange(page - 1)}
+            disabled={loading || page <= 1}
+            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50 text-sm"
+          >
+            Prev
+          </button>
+          <span className="text-sm text-gray-600">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => onPageChange(page + 1)}
+            disabled={loading || page >= totalPages}
+            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50 text-sm"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LedgerTable({ title, section, accentClass }) {
   const rows = section?.transactions || [];
@@ -62,8 +159,43 @@ export default function PropertyCashflowLedger() {
   const [propertyId, setPropertyId] = useState("");
   const [ledger, setLedger] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+
+  const loadLedger = async (trimmedId, activityPage = 1, { fullLoad = false } = {}) => {
+    if (fullLoad) {
+      setLoading(true);
+      setLedger(null);
+    } else {
+      setActivitiesLoading(true);
+    }
+    setStatusMessage("");
+
+    try {
+      const data = await getCashflowLedger(trimmedId, {
+        activityPage,
+        activityPageSize: ACTIVITY_PAGE_SIZE,
+      });
+      if (data?.error) {
+        setStatusMessage(data.error);
+        return;
+      }
+      setLedger(data);
+      if (fullLoad) {
+        setStatusMessage(
+          `Loaded ${data.transactionCount ?? 0} transaction(s) and ${data.activityCount ?? 0} activity(ies) for property ${data.propertyId}.`
+        );
+      }
+    } catch (err) {
+      setStatusMessage(
+        err.response?.data?.detail || err.message || "Failed to load ledger."
+      );
+    } finally {
+      setLoading(false);
+      setActivitiesLoading(false);
+    }
+  };
 
   const handleLoad = async () => {
     const trimmedId = propertyId.trim();
@@ -71,28 +203,13 @@ export default function PropertyCashflowLedger() {
       setStatusMessage("Property ID is required.");
       return;
     }
+    await loadLedger(trimmedId, 1, { fullLoad: true });
+  };
 
-    setLoading(true);
-    setStatusMessage("");
-    setLedger(null);
-
-    try {
-      const data = await getCashflowLedger(trimmedId);
-      if (data?.error) {
-        setStatusMessage(data.error);
-        return;
-      }
-      setLedger(data);
-      setStatusMessage(
-        `Loaded ${data.transactionCount ?? 0} transaction(s) for property ${data.propertyId}.`
-      );
-    } catch (err) {
-      setStatusMessage(
-        err.response?.data?.detail || err.message || "Failed to load ledger."
-      );
-    } finally {
-      setLoading(false);
-    }
+  const handleActivityPageChange = async (nextPage) => {
+    const trimmedId = propertyId.trim() || ledger?.propertyId;
+    if (!trimmedId || nextPage < 1) return;
+    await loadLedger(trimmedId, nextPage, { fullLoad: false });
   };
 
   const handleExport = async () => {
@@ -192,6 +309,14 @@ export default function PropertyCashflowLedger() {
             accentClass="text-green-700"
           />
         </div>
+      )}
+
+      {ledger && (
+        <ActivitiesTable
+          activities={ledger.activities}
+          onPageChange={handleActivityPageChange}
+          loading={activitiesLoading}
+        />
       )}
     </div>
   );

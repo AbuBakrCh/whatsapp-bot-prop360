@@ -368,8 +368,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#df = load_dataset_from_google_sheet(SHEET_ID)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -2277,9 +2277,18 @@ async def delete_timetables(payload: dict):
 
 
 @fastapi_app.get("/cashflows/ledger")
-async def get_cashflow_ledger(propertyId: str = Query(..., min_length=1)):
+async def get_cashflow_ledger(
+    propertyId: str = Query(..., min_length=1),
+    activityPage: int = Query(1, ge=1),
+    activityPageSize: int = Query(10, ge=1, le=100),
+):
     try:
-        ledger = await fetch_ledger_for_property(prop_db, propertyId)
+        ledger = await fetch_ledger_for_property(
+            prop_db,
+            propertyId,
+            activity_page=activityPage,
+            activity_page_size=activityPageSize,
+        )
         return ledger
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2291,7 +2300,9 @@ async def get_cashflow_ledger(propertyId: str = Query(..., min_length=1)):
 @fastapi_app.get("/cashflows/ledger/export")
 async def export_cashflow_ledger(propertyId: str = Query(..., min_length=1)):
     try:
-        ledger = await fetch_ledger_for_property(prop_db, propertyId)
+        ledger = await fetch_ledger_for_property(
+            prop_db, propertyId, include_all_activities=True
+        )
         excel_bytes = build_ledger_excel(ledger)
         filename = f"cashflow-ledger-{propertyId}.xlsx"
         return StreamingResponse(

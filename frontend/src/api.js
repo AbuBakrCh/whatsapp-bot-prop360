@@ -242,10 +242,13 @@ export async function deleteCashflows(payload) {
 }
 
 
-export async function getCashflowLedger(propertyId) {
+export async function getCashflowLedger(
+  propertyId,
+  { activityPage = 1, activityPageSize = 10 } = {}
+) {
   try {
     const response = await axios.get(`${BASE}/cashflows/ledger`, {
-      params: { propertyId },
+      params: { propertyId, activityPage, activityPageSize },
     });
     return response.data;
   } catch (err) {

@@ -1,7 +1,10 @@
 import io
+import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+
+DEFAULT_ACTIVITY_PAGE_SIZE = 10
 
 import pandas as pd
 
@@ -12,6 +15,21 @@ FIELD_DATE = "field-1757605069078-p5plna7qr"
 FIELD_DESCRIPTION = "field-1757605219384-fikyy3d7u"
 FIELD_AMOUNT = "field-1757605508754-uea4iadqd"
 FIELD_DEBIT_CREDIT = "field-1757605718340-ue95ozr9u"
+
+ACTIVITY_INDICATOR = "custom-wyey07pb7"
+ACTIVITY_FORM_URL_TEMPLATE = (
+    "https://prop360.pro/en/dashboard/forms/custom-wyey07pb7/{activity_id}"
+)
+FIELD_ACTIVITY_DATE = "field-1760213127501-vd61epis6"
+FIELD_ACTIVITY_DESCRIPTION = "field-1760213212062-ask5v2fuy"
+ACTIVITY_PROPERTY_FIELDS = (
+    "field-1760213192233-byk1fbajy",
+    "field-1762112936496-lcg46gwiy",
+    "field-1762112987608-45lv27qbc",
+    "field-1764147281268-oqtfditkd",
+    "field-1764147283488-svx61v7j3",
+    "field-1764147285842-qbxk0iz1e",
+)
 
 
 def normalize_property_field(value: Any) -> str | None:
@@ -174,19 +192,37 @@ def parse_amount(value: Any) -> float:
         return 0.0
 
 
-def format_date(value: Any) -> str:
+def parse_sort_datetime(value: Any) -> datetime | None:
     if value is None:
-        return ""
+        return None
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d")
-    text = str(value).strip()
-    if not text:
-        return ""
-    try:
-        normalized = text.replace("Z", "+00:00")
-        return datetime.fromisoformat(normalized).strftime("%Y-%m-%d")
-    except ValueError:
-        return text[:10] if len(text) >= 10 else text
+        dt = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def format_date(value: Any) -> str:
+    parsed = parse_sort_datetime(value)
+    if parsed:
+        return parsed.strftime("%Y-%m-%d")
+    text = str(value).strip() if value is not None else ""
+    return text[:10] if len(text) >= 10 else text
+
+
+def format_datetime(value: Any) -> str:
+    parsed = parse_sort_datetime(value)
+    if parsed:
+        return parsed.strftime("%Y-%m-%d %H:%M")
+    return ""
 
 
 def normalize_debit_credit(value: Any) -> str | None:
@@ -204,26 +240,124 @@ def normalize_debit_credit(value: Any) -> str | None:
     return None
 
 
+def doc_matches_property_id(data: dict, property_id: str) -> bool:
+    pid = str(property_id).strip()
+    for field in ACTIVITY_PROPERTY_FIELDS:
+        if extract_property_id(data.get(field)) == pid:
+            return True
+    return False
+
+
+def parse_activity_document(doc: dict) -> dict | None:
+    data = doc.get("data") or {}
+    description = str(data.get(FIELD_ACTIVITY_DESCRIPTION) or "").strip()
+    if not description:
+        return None
+
+    activity_date = data.get(FIELD_ACTIVITY_DATE)
+    activity_id = str(doc.get("_id", ""))
+    return {
+        "id": activity_id,
+        "date": format_datetime(activity_date),
+        "description": description,
+        "_sort_date": activity_date,
+    }
+
+
+def paginate_activities(
+    activities: list[dict], page: int, page_size: int
+) -> dict[str, Any]:
+    total_count = len(activities)
+    page_size = max(1, page_size)
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count else 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    return {
+        "rows": activities[start:end],
+        "page": page,
+        "pageSize": page_size,
+        "totalCount": total_count,
+        "totalPages": total_pages,
+    }
+
+
+async def fetch_activities_for_property(prop_db, property_id: str) -> list[dict]:
+    property_id = str(property_id).strip()
+    regex = property_field_regex(property_id)
+    query = {
+        "indicator": ACTIVITY_INDICATOR,
+        "status": "active",
+        "$or": [{f"data.{field}": {"$regex": regex}} for field in ACTIVITY_PROPERTY_FIELDS],
+    }
+
+    cursor = prop_db.formdatas.find(query).sort("_id", -1)
+    activities = []
+    seen_ids: set[str] = set()
+
+    async for doc in cursor:
+        doc_id = str(doc.get("_id", ""))
+        if doc_id in seen_ids:
+            continue
+
+        data = doc.get("data") or {}
+        if not doc_matches_property_id(data, property_id):
+            continue
+
+        seen_ids.add(doc_id)
+
+        parsed = parse_activity_document(doc)
+        if parsed:
+            activities.append(parsed)
+
+    activities.sort(
+        key=lambda row: parse_sort_datetime(row.get("_sort_date"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return [
+        {
+            "id": row.get("id", ""),
+            "date": row["date"],
+            "description": row["description"],
+            "url": (
+                ACTIVITY_FORM_URL_TEMPLATE.format(activity_id=row["id"])
+                if row.get("id")
+                else ""
+            ),
+        }
+        for row in activities
+    ]
+
+
 def parse_cashflow_document(doc: dict) -> dict | None:
     data = doc.get("data") or {}
     entry_type = normalize_debit_credit(data.get(FIELD_DEBIT_CREDIT))
     if not entry_type:
         return None
 
+    cashflow_date = data.get(FIELD_DATE)
     return {
-        "date": format_date(data.get(FIELD_DATE)),
+        "date": format_datetime(cashflow_date),
         "description": str(data.get(FIELD_DESCRIPTION) or "").strip(),
         "amount": parse_amount(data.get(FIELD_AMOUNT)),
         "type": entry_type,
-        "_sort_date": data.get(FIELD_DATE) or "",
+        "_sort_date": cashflow_date,
     }
+
+
+def _transaction_sort_key(row: dict) -> datetime:
+    return parse_sort_datetime(row.get("_sort_date")) or datetime.min.replace(
+        tzinfo=timezone.utc
+    )
 
 
 def build_ledger(transactions: list[dict]) -> dict:
     debit_rows = []
     credit_rows = []
 
-    for tx in sorted(transactions, key=lambda row: row.get("_sort_date") or ""):
+    for tx in sorted(transactions, key=_transaction_sort_key, reverse=True):
         row = {
             "date": tx["date"],
             "description": tx["description"],
@@ -251,7 +385,13 @@ def build_ledger(transactions: list[dict]) -> dict:
     }
 
 
-async def fetch_ledger_for_property(prop_db, property_id: str) -> dict:
+async def fetch_ledger_for_property(
+    prop_db,
+    property_id: str,
+    activity_page: int = 1,
+    activity_page_size: int = DEFAULT_ACTIVITY_PAGE_SIZE,
+    include_all_activities: bool = False,
+) -> dict:
     property_id = str(property_id).strip()
     if not property_id:
         raise ValueError("propertyId is required")
@@ -280,10 +420,25 @@ async def fetch_ledger_for_property(prop_db, property_id: str) -> dict:
     resolved_name = await lookup_property_name(prop_db, property_id)
     property_name = _pick_longer_property_name(property_name, resolved_name)
 
+    all_activities = await fetch_activities_for_property(prop_db, property_id)
+
     ledger = build_ledger(transactions)
     ledger["propertyId"] = property_id
     ledger["propertyName"] = property_name
     ledger["transactionCount"] = len(transactions)
+    ledger["activityCount"] = len(all_activities)
+    if include_all_activities:
+        ledger["activities"] = {
+            "rows": all_activities,
+            "page": 1,
+            "pageSize": len(all_activities) or DEFAULT_ACTIVITY_PAGE_SIZE,
+            "totalCount": len(all_activities),
+            "totalPages": 1,
+        }
+    else:
+        ledger["activities"] = paginate_activities(
+            all_activities, activity_page, activity_page_size
+        )
     return ledger
 
 
@@ -337,6 +492,23 @@ def build_ledger_excel(ledger: dict) -> bytes:
             ledger["credit"]["sum"],
         ]
     )
+
+    activity_rows = ledger.get("activities", {}).get("rows", [])
+    rows.append(["", "", "", "", "", "", ""])
+    rows.append(["ACTIVITIES", "", "", "", "", "", ""])
+    rows.append(["Date", "Activity Description", "", "", "", "", ""])
+    for activity in activity_rows:
+        rows.append(
+            [
+                activity.get("date", ""),
+                activity.get("description", ""),
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
