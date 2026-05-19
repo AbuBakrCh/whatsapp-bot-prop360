@@ -368,8 +368,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-#df = load_dataset_from_google_sheet(SHEET_ID)
-#embeddings, texts = build_index(df)
+df = load_dataset_from_google_sheet(SHEET_ID)
+embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
