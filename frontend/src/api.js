@@ -243,30 +243,39 @@ export async function deleteCashflows(payload) {
 
 
 export async function getCashflowLedger(
-  propertyId,
-  { activityPage = 1, activityPageSize = 10 } = {}
+  { groupType = "property", groupId, activityPage = 1, activityPageSize = 10 } = {}
 ) {
   try {
-    const response = await axios.get(`${BASE}/cashflows/ledger`, {
-      params: { propertyId, activityPage, activityPageSize },
-    });
+    const params = { activityPage, activityPageSize };
+    if (groupType === "contact") {
+      params.contactId = groupId;
+    } else {
+      params.propertyId = groupId;
+    }
+    const response = await axios.get(`${BASE}/cashflows/ledger`, { params });
     return response.data;
   } catch (err) {
-    console.error("Error fetching cashflow ledger:", err);
+    console.error("Error fetching ledger report:", err);
     throw err;
   }
 }
 
-export async function exportCashflowLedger(propertyId) {
+export async function exportCashflowLedger({ groupType = "property", groupId } = {}) {
   try {
+    const params = {};
+    if (groupType === "contact") {
+      params.contactId = groupId;
+    } else {
+      params.propertyId = groupId;
+    }
     const response = await axios.get(`${BASE}/cashflows/ledger/export`, {
-      params: { propertyId },
+      params,
       responseType: "blob",
     });
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `cashflow-ledger-${propertyId}.xlsx`);
+    link.setAttribute("download", `ledger-report-${groupType}-${groupId}.xlsx`);
     document.body.appendChild(link);
     link.click();
     link.remove();

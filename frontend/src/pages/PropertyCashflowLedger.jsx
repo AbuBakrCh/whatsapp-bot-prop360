@@ -156,14 +156,26 @@ function LedgerTable({ title, section, accentClass }) {
 }
 
 export default function PropertyCashflowLedger() {
-  const [propertyId, setPropertyId] = useState("");
+  const [groupType, setGroupType] = useState("property");
+  const [groupId, setGroupId] = useState("");
   const [ledger, setLedger] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const loadLedger = async (trimmedId, activityPage = 1, { fullLoad = false } = {}) => {
+  const groupLabel = groupType === "contact" ? "Contact" : "Property";
+  const idPlaceholder =
+    groupType === "contact"
+      ? "Contact ID (e.g. 9588492740070648)"
+      : "Property ID (e.g. 7279970513734244)";
+
+  const loadLedger = async (
+    trimmedId,
+    type,
+    activityPage = 1,
+    { fullLoad = false } = {}
+  ) => {
     if (fullLoad) {
       setLoading(true);
       setLedger(null);
@@ -173,7 +185,9 @@ export default function PropertyCashflowLedger() {
     setStatusMessage("");
 
     try {
-      const data = await getCashflowLedger(trimmedId, {
+      const data = await getCashflowLedger({
+        groupType: type,
+        groupId: trimmedId,
         activityPage,
         activityPageSize: ACTIVITY_PAGE_SIZE,
       });
@@ -184,7 +198,7 @@ export default function PropertyCashflowLedger() {
       setLedger(data);
       if (fullLoad) {
         setStatusMessage(
-          `Loaded ${data.transactionCount ?? 0} transaction(s) and ${data.activityCount ?? 0} activity(ies) for property ${data.propertyId}.`
+          `Loaded ${data.transactionCount ?? 0} transaction(s) and ${data.activityCount ?? 0} activity(ies) for ${data.groupType} ${data.groupId}.`
         );
       }
     } catch (err) {
@@ -198,24 +212,25 @@ export default function PropertyCashflowLedger() {
   };
 
   const handleLoad = async () => {
-    const trimmedId = propertyId.trim();
+    const trimmedId = groupId.trim();
     if (!trimmedId) {
-      setStatusMessage("Property ID is required.");
+      setStatusMessage(`${groupLabel} ID is required.`);
       return;
     }
-    await loadLedger(trimmedId, 1, { fullLoad: true });
+    await loadLedger(trimmedId, groupType, 1, { fullLoad: true });
   };
 
   const handleActivityPageChange = async (nextPage) => {
-    const trimmedId = propertyId.trim() || ledger?.propertyId;
+    const trimmedId = groupId.trim() || ledger?.groupId;
+    const type = ledger?.groupType || groupType;
     if (!trimmedId || nextPage < 1) return;
-    await loadLedger(trimmedId, nextPage, { fullLoad: false });
+    await loadLedger(trimmedId, type, nextPage, { fullLoad: false });
   };
 
   const handleExport = async () => {
-    const trimmedId = propertyId.trim();
+    const trimmedId = groupId.trim();
     if (!trimmedId) {
-      setStatusMessage("Property ID is required.");
+      setStatusMessage(`${groupLabel} ID is required.`);
       return;
     }
 
@@ -223,7 +238,7 @@ export default function PropertyCashflowLedger() {
     setStatusMessage("");
 
     try {
-      await exportCashflowLedger(trimmedId);
+      await exportCashflowLedger({ groupType, groupId: trimmedId });
       setStatusMessage("Excel file downloaded.");
     } catch (err) {
       setStatusMessage(
@@ -236,18 +251,26 @@ export default function PropertyCashflowLedger() {
 
   return (
     <div className="max-w-6xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Property Cashflow Ledger</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Ledger Report</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Enter a property ID (the value after the pipe in the property field) to build a
-        debit/credit ledger from cashflow records.
+        Group debit/credit transactions and related activities by property or contact ID
+        (the value after the pipe in the relevant field).
       </p>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <select
+          value={groupType}
+          onChange={(e) => setGroupType(e.target.value)}
+          className="border border-slate-300 rounded-md px-3 py-2 bg-white"
+        >
+          <option value="property">Property</option>
+          <option value="contact">Contact</option>
+        </select>
         <input
           type="text"
-          value={propertyId}
-          onChange={(e) => setPropertyId(e.target.value)}
-          placeholder="Property ID (e.g. 7279970513734244)"
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          placeholder={idPlaceholder}
           className="flex-1 border border-slate-300 rounded-md px-3 py-2"
         />
         <button
@@ -286,12 +309,16 @@ export default function PropertyCashflowLedger() {
       {ledger && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
           <p className="text-gray-800">
-            <span className="font-medium text-gray-600">Property ID:</span>{" "}
-            {ledger.propertyId}
+            <span className="font-medium text-gray-600">Group type:</span>{" "}
+            {ledger.groupType}
           </p>
           <p className="mt-1 text-gray-800">
-            <span className="font-medium text-gray-600">Property Name:</span>{" "}
-            {ledger.propertyName || "—"}
+            <span className="font-medium text-gray-600">Group ID:</span>{" "}
+            {ledger.groupId}
+          </p>
+          <p className="mt-1 text-gray-800">
+            <span className="font-medium text-gray-600">Name:</span>{" "}
+            {ledger.groupName || "—"}
           </p>
         </div>
       )}

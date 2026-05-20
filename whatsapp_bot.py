@@ -45,7 +45,12 @@ from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
 from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
-from services.cashflow_ledger import fetch_ledger_for_property, build_ledger_excel
+from services.ledger_report import (
+    GROUP_TYPE_CONTACT,
+    GROUP_TYPE_PROPERTY,
+    build_ledger_excel,
+    fetch_ledger_report,
+)
 
 fastapi_app = FastAPI()
 
@@ -2278,14 +2283,31 @@ async def delete_timetables(payload: dict):
 
 @fastapi_app.get("/cashflows/ledger")
 async def get_cashflow_ledger(
-    propertyId: str = Query(..., min_length=1),
+    propertyId: str | None = Query(None),
+    contactId: str | None = Query(None),
     activityPage: int = Query(1, ge=1),
     activityPageSize: int = Query(10, ge=1, le=100),
 ):
     try:
-        ledger = await fetch_ledger_for_property(
+        if propertyId and contactId:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either propertyId or contactId, not both.",
+            )
+        if propertyId:
+            group_type, group_id = GROUP_TYPE_PROPERTY, propertyId
+        elif contactId:
+            group_type, group_id = GROUP_TYPE_CONTACT, contactId
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Either propertyId or contactId is required.",
+            )
+
+        ledger = await fetch_ledger_report(
             prop_db,
-            propertyId,
+            group_type,
+            group_id,
             activity_page=activityPage,
             activity_page_size=activityPageSize,
         )
@@ -2298,13 +2320,31 @@ async def get_cashflow_ledger(
 
 
 @fastapi_app.get("/cashflows/ledger/export")
-async def export_cashflow_ledger(propertyId: str = Query(..., min_length=1)):
+async def export_cashflow_ledger(
+    propertyId: str | None = Query(None),
+    contactId: str | None = Query(None),
+):
     try:
-        ledger = await fetch_ledger_for_property(
-            prop_db, propertyId, include_all_activities=True
+        if propertyId and contactId:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either propertyId or contactId, not both.",
+            )
+        if propertyId:
+            group_type, group_id = GROUP_TYPE_PROPERTY, propertyId
+        elif contactId:
+            group_type, group_id = GROUP_TYPE_CONTACT, contactId
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Either propertyId or contactId is required.",
+            )
+
+        ledger = await fetch_ledger_report(
+            prop_db, group_type, group_id, include_all_activities=True
         )
         excel_bytes = build_ledger_excel(ledger)
-        filename = f"cashflow-ledger-{propertyId}.xlsx"
+        filename = f"ledger-report-{group_type}-{group_id}.xlsx"
         return StreamingResponse(
             io.BytesIO(excel_bytes),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
