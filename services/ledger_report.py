@@ -9,6 +9,9 @@ DEFAULT_ACTIVITY_PAGE_SIZE = 10
 import pandas as pd
 
 CASHFLOW_INDICATOR = "custom-a462rgbzo"
+CASHFLOW_FORM_URL_TEMPLATE = (
+    "https://prop360.pro/en/dashboard/forms/custom-a462rgbzo/{cashflow_id}"
+)
 
 FIELD_PROPERTY = "field-1757605637506-70de9chi5"
 FIELD_DATE = "field-1757605069078-p5plna7qr"
@@ -385,12 +388,19 @@ def parse_cashflow_document(doc: dict) -> dict | None:
         return None
 
     cashflow_date = data.get(FIELD_DATE)
+    cashflow_id = str(doc.get("_id", ""))
     return {
+        "id": cashflow_id,
         "date": format_datetime(cashflow_date),
         "description": str(data.get(FIELD_DESCRIPTION) or "").strip(),
         "amount": parse_amount(data.get(FIELD_AMOUNT)),
         "type": entry_type,
         "_sort_date": cashflow_date,
+        "url": (
+            CASHFLOW_FORM_URL_TEMPLATE.format(cashflow_id=cashflow_id)
+            if cashflow_id
+            else ""
+        ),
     }
 
 
@@ -406,9 +416,11 @@ def build_ledger(transactions: list[dict]) -> dict:
 
     for tx in sorted(transactions, key=_transaction_sort_key, reverse=True):
         row = {
+            "id": tx.get("id", ""),
             "date": tx["date"],
             "description": tx["description"],
             "amount": tx["amount"],
+            "url": tx.get("url", ""),
         }
         if tx["type"] == "debit":
             debit_rows.append(row)
@@ -607,21 +619,24 @@ def build_ledger_excel(ledger: dict) -> bytes:
     group_id = ledger.get("groupId") or ""
     group_name = ledger.get("groupName") or ""
 
+    excel_width = 9
     rows: list[list[Any]] = [
-        ["Group Type", group_type, "", "", "", "", ""],
-        ["Group ID", group_id, "", "", "", "", ""],
-        ["Group Name", group_name, "", "", "", "", ""],
-        ["", "", "", "", "", "", ""],
+        ["Group Type", group_type] + [""] * (excel_width - 2),
+        ["Group ID", group_id] + [""] * (excel_width - 2),
+        ["Group Name", group_name] + [""] * (excel_width - 2),
+        [""] * excel_width,
         [
             "Date",
+            "Link",
             "Transaction Description",
             "Amount",
             "",
             "Date",
+            "Link",
             "Transaction Description",
             "Amount",
         ],
-        ["DEBIT", "", "", "", "CREDIT", "", ""],
+        ["DEBIT", "", "", "", "CREDIT", "", "", "", ""],
     ]
 
     for index in range(max_len):
@@ -630,10 +645,12 @@ def build_ledger_excel(ledger: dict) -> bytes:
         rows.append(
             [
                 debit.get("date", ""),
+                debit.get("url", ""),
                 debit.get("description", ""),
                 debit.get("amount", ""),
                 "",
                 credit.get("date", ""),
+                credit.get("url", ""),
                 credit.get("description", ""),
                 credit.get("amount", ""),
             ]
@@ -642,8 +659,10 @@ def build_ledger_excel(ledger: dict) -> bytes:
     rows.append(
         [
             "",
+            "",
             "Total",
             ledger["debit"]["sum"],
+            "",
             "",
             "",
             "Total",
@@ -652,20 +671,17 @@ def build_ledger_excel(ledger: dict) -> bytes:
     )
 
     activity_rows = ledger.get("activities", {}).get("rows", [])
-    rows.append(["", "", "", "", "", "", ""])
-    rows.append(["ACTIVITIES", "", "", "", "", "", ""])
-    rows.append(["Date", "Activity Description", "", "", "", "", ""])
+    rows.append([""] * excel_width)
+    rows.append(["ACTIVITIES"] + [""] * (excel_width - 1))
+    rows.append(["Date", "Link", "Activity Description"] + [""] * (excel_width - 3))
     for activity in activity_rows:
         rows.append(
             [
                 activity.get("date", ""),
+                activity.get("url", ""),
                 activity.get("description", ""),
-                "",
-                "",
-                "",
-                "",
-                "",
             ]
+            + [""] * (excel_width - 3)
         )
 
     buffer = io.BytesIO()

@@ -109,7 +109,10 @@ function LedgerTable({ title, section, accentClass }) {
         <table className="w-full text-sm">
           <thead className="bg-slate-100">
             <tr>
-              <th className="text-left px-3 py-2 font-medium text-gray-700">Date</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 w-40">Date</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-700 w-12">
+                <span className="sr-only">Open</span>
+              </th>
               <th className="text-left px-3 py-2 font-medium text-gray-700">
                 Transaction Description
               </th>
@@ -119,14 +122,29 @@ function LedgerTable({ title, section, accentClass }) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-3 py-6 text-center text-gray-400">
+                <td colSpan={4} className="px-3 py-6 text-center text-gray-400">
                   No transactions
                 </td>
               </tr>
             ) : (
               rows.map((row, index) => (
-                <tr key={`${row.date}-${index}`} className="border-t border-slate-100">
-                  <td className="px-3 py-2 whitespace-nowrap">{row.date}</td>
+                <tr key={row.id || `${row.date}-${index}`} className="border-t border-slate-100">
+                  <td className="px-3 py-2 whitespace-nowrap align-top">{row.date}</td>
+                  <td className="px-3 py-2 text-center align-top">
+                    {row.url ? (
+                      <a
+                        href={row.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open cashflow in Prop360"
+                        className="inline-flex text-blue-600 hover:text-blue-800"
+                      >
+                        <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-3 py-2">{row.description || "—"}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {Number(row.amount).toLocaleString(undefined, {
@@ -138,7 +156,7 @@ function LedgerTable({ title, section, accentClass }) {
               ))
             )}
             <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-              <td className="px-3 py-2" colSpan={2}>
+              <td className="px-3 py-2" colSpan={3}>
                 Total
               </td>
               <td className="px-3 py-2 text-right">
