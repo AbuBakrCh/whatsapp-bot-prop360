@@ -61,8 +61,7 @@ export default function ShareWithGroups() {
         Share Property or Contact
       </h2>
       <p className="text-sm text-gray-600 mb-4">
-        Enter a property or contact PID and select groups. All members in those
-        groups will be added to <code className="text-xs">sharedWithMerchants</code>.
+        Enter a property or contact PID and select groups. Property/Contact would be shared with all merchants within that group.
       </p>
 
       <form onSubmit={handleShare} className="space-y-4">
