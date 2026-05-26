@@ -112,6 +112,7 @@ def extract_property_name(
             name = _clean_property_name_display(text[: match.start()])
             if name:
                 return name
+        return None
 
     if "|" in text:
         name = _clean_property_name_display(text.rsplit("|", 1)[0])
@@ -446,10 +447,14 @@ def build_ledger(transactions: list[dict]) -> dict:
 
 
 async def _collect_contact_name_from_docs(cursor, contact_id: str, best: str) -> str:
+    cid = str(contact_id).strip()
     async for doc in cursor:
         data = doc.get("data") or {}
         for field in ACTIVITY_CLIENT_FIELDS + (FIELD_CASHFLOW_CONTACT,):
-            name = extract_piped_label(data.get(field), contact_id)
+            raw = data.get(field)
+            if extract_piped_id(raw) != cid:
+                continue
+            name = extract_piped_label(raw, contact_id)
             best = _pick_longer_property_name(best, name)
     return best
 
