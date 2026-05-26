@@ -646,6 +646,7 @@ async def receive(request: Request):
 @fastapi_app.on_event("startup")
 async def ensure_indexes():
     await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
+    await prop_db.groups.create_index("nameKey", unique=True)
     await transfer_ownership(prop_db)
     start_tax_emails_scheduler(prop_db)
     start_scheduler(prop_db)
@@ -3390,6 +3391,430 @@ async def delete_property_filter(email: str):
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
+
+
+def _serialize_group_doc(doc):
+    return json.loads(json_util.dumps(doc))
+
+
+def _parse_group_object_id(group_id: str):
+    try:
+        return ObjectId(group_id)
+    except Exception:
+        return None
+
+
+async def _resolve_group_members(user_ids):
+    if not user_ids or not isinstance(user_ids, list):
+        return None, "At least one member is required."
+
+    object_ids = []
+    for uid in user_ids:
+        oid = _parse_group_object_id(str(uid))
+        if not oid:
+            return None, f"Invalid user id: {uid}"
+        object_ids.append(oid)
+
+    users_col = prop_db.users
+    cursor = users_col.find({"_id": {"$in": object_ids}})
+    found = {}
+    async for user in cursor:
+        found[str(user["_id"])] = user
+
+    missing = [str(oid) for oid in object_ids if str(oid) not in found]
+    if missing:
+        return None, f"User(s) not found: {', '.join(missing)}"
+
+    members = []
+    for oid in object_ids:
+        user = found[str(oid)]
+        members.append({
+            "_id": str(user["_id"]),
+            "displayName": user.get("displayName") or "",
+            "email": user.get("email") or "",
+            "merchantId": user.get("merchantId") or "",
+        })
+
+    return members, None
+
+
+async def _group_name_taken(name_key: str, exclude_id=None):
+    groups_col = prop_db.groups
+    query = {"nameKey": name_key}
+    if exclude_id:
+        query["_id"] = {"$ne": exclude_id}
+    return await groups_col.find_one(query) is not None
+
+
+@fastapi_app.get("/groups/users/search")
+async def search_group_users(
+    q: str = Query("", min_length=0),
+    limit: int = Query(10, ge=1, le=25),
+    exclude: str = Query(""),
+):
+    try:
+        query_text = (q or "").strip()
+        if len(query_text) < 2:
+            return {"data": []}
+
+        escaped = re.escape(query_text)
+        regex = {"$regex": escaped, "$options": "i"}
+        user_filter = {
+            "$or": [
+                {"displayName": regex},
+                {"email": regex},
+            ]
+        }
+
+        exclude_ids = []
+        if exclude:
+            for part in exclude.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                oid = _parse_group_object_id(part)
+                if oid:
+                    exclude_ids.append(oid)
+
+        if exclude_ids:
+            user_filter["_id"] = {"$nin": exclude_ids}
+
+        users_col = prop_db.users
+        cursor = (
+            users_col.find(
+                user_filter,
+                {"displayName": 1, "email": 1, "merchantId": 1},
+            )
+            .sort("displayName", 1)
+            .limit(limit)
+        )
+
+        results = []
+        async for user in cursor:
+            results.append({
+                "_id": str(user["_id"]),
+                "displayName": user.get("displayName") or "",
+                "email": user.get("email") or "",
+                "merchantId": user.get("merchantId") or "",
+            })
+
+        return {"data": results}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.get("/groups")
+async def get_all_groups(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(5, ge=1, le=100),
+):
+    try:
+        groups_col = prop_db.groups
+        skip = (page - 1) * page_size
+
+        cursor = (
+            groups_col.find({})
+            .sort("_id", -1)
+            .skip(skip)
+            .limit(page_size)
+        )
+
+        results = []
+        async for doc in cursor:
+            results.append(_serialize_group_doc(doc))
+
+        total = await groups_col.count_documents({})
+
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "data": results,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+async def _collect_merchant_ids_from_group_ids(group_ids):
+    if not group_ids or not isinstance(group_ids, list):
+        return None, "At least one group is required.", []
+
+    object_ids = []
+    for gid in group_ids:
+        oid = _parse_group_object_id(str(gid))
+        if not oid:
+            return None, f"Invalid group id: {gid}", []
+        object_ids.append(oid)
+
+    groups_col = prop_db.groups
+    cursor = groups_col.find({"_id": {"$in": object_ids}})
+    found_groups = []
+    merchant_ids = set()
+
+    async for group in cursor:
+        found_groups.append(group)
+        for member in group.get("members") or []:
+            merchant_id = member.get("merchantId")
+            if merchant_id:
+                merchant_ids.add(merchant_id)
+
+    if len(found_groups) != len(object_ids):
+        found_ids = {str(g["_id"]) for g in found_groups}
+        missing = [str(oid) for oid in object_ids if str(oid) not in found_ids]
+        return None, f"Group(s) not found: {', '.join(missing)}", []
+
+    if not merchant_ids:
+        return None, "Selected groups have no members with merchantId.", found_groups
+
+    return list(merchant_ids), None, found_groups
+
+
+def _parse_pid_value(pid_raw):
+    try:
+        return float(pid_raw)
+    except (TypeError, ValueError):
+        return None
+
+
+@fastapi_app.get("/groups/search")
+async def search_groups(
+    q: str = Query("", min_length=0),
+    limit: int = Query(500, ge=1, le=500),
+    exclude: str = Query(""),
+):
+    try:
+        groups_col = prop_db.groups
+        query_text = (q or "").strip()
+
+        group_filter = {}
+        if query_text:
+            escaped = re.escape(query_text)
+            group_filter["name"] = {"$regex": escaped, "$options": "i"}
+
+        exclude_ids = []
+        if exclude:
+            for part in exclude.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                oid = _parse_group_object_id(part)
+                if oid:
+                    exclude_ids.append(oid)
+
+        if exclude_ids:
+            group_filter["_id"] = {"$nin": exclude_ids}
+
+        cursor = groups_col.find(group_filter, {"name": 1, "members": 1}).sort("name", 1)
+        if query_text:
+            cursor = cursor.limit(limit)
+
+        results = []
+        async for group in cursor:
+            members = group.get("members") or []
+            results.append({
+                "_id": str(group["_id"]),
+                "name": group.get("name") or "",
+                "memberCount": len(members),
+            })
+
+        return {"data": results}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.post("/groups/share")
+async def share_with_groups(payload: dict):
+    try:
+        share_type = (payload.get("shareType") or "").strip().lower()
+        pid_raw = payload.get("pid")
+        group_ids = payload.get("groupIds") or []
+
+        if share_type not in ("property", "contact"):
+            return {"error": "shareType must be 'property' or 'contact'."}
+
+        pid_value = _parse_pid_value(pid_raw)
+        if pid_value is None:
+            return {"error": "A valid PID is required."}
+
+        merchant_ids, group_error, found_groups = await _collect_merchant_ids_from_group_ids(
+            group_ids
+        )
+        if group_error:
+            return {"error": group_error}
+
+        indicator = "properties" if share_type == "property" else "contacts"
+        formdatas_col = prop_db.formdatas
+
+        doc = await formdatas_col.find_one({
+            "pid": pid_value,
+            "indicator": indicator,
+        })
+
+        if not doc:
+            label = "Property" if share_type == "property" else "Contact"
+            return {"error": f"{label} not found for PID {pid_value}."}
+
+        result = await formdatas_col.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$addToSet": {
+                    "sharedWithMerchants": {"$each": merchant_ids},
+                },
+                "$set": {
+                    "metadata.updatedAt": datetime.utcnow(),
+                    "metadata.updatedBy": "console",
+                },
+            },
+        )
+
+        group_names = [g.get("name") or "" for g in found_groups]
+
+        return {
+            "message": f"{share_type.capitalize()} shared successfully with selected groups.",
+            "pid": pid_value,
+            "shareType": share_type,
+            "indicator": indicator,
+            "matched": True,
+            "modified": result.modified_count > 0,
+            "merchantIdsAdded": merchant_ids,
+            "groups": group_names,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.get("/groups/{group_id}")
+async def get_group(group_id: str):
+    try:
+        oid = _parse_group_object_id(group_id)
+        if not oid:
+            return {"error": "Invalid group id."}
+
+        doc = await prop_db.groups.find_one({"_id": oid})
+        if not doc:
+            return {"error": "Group not found."}
+
+        return _serialize_group_doc(doc)
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.post("/groups")
+async def create_group(payload: dict):
+    try:
+        name = (payload.get("name") or "").strip()
+        user_ids = payload.get("userIds") or []
+
+        if not name:
+            return {"error": "Group name is required."}
+
+        members, member_error = await _resolve_group_members(user_ids)
+        if member_error:
+            return {"error": member_error}
+
+        name_key = name.lower()
+        if await _group_name_taken(name_key):
+            return {"error": "A group with this name already exists."}
+
+        now = datetime.utcnow()
+        doc = {
+            "name": name,
+            "nameKey": name_key,
+            "members": members,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+
+        result = await prop_db.groups.insert_one(doc)
+        doc["_id"] = result.inserted_id
+
+        return {
+            "message": "Group created successfully.",
+            "group": _serialize_group_doc(doc),
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.put("/groups/{group_id}")
+async def update_group(group_id: str, payload: dict):
+    try:
+        oid = _parse_group_object_id(group_id)
+        if not oid:
+            return {"error": "Invalid group id."}
+
+        groups_col = prop_db.groups
+        existing = await groups_col.find_one({"_id": oid})
+        if not existing:
+            return {"error": "Group not found."}
+
+        name = (payload.get("name") or "").strip()
+        user_ids = payload.get("userIds") or []
+
+        if not name:
+            return {"error": "Group name is required."}
+
+        members, member_error = await _resolve_group_members(user_ids)
+        if member_error:
+            return {"error": member_error}
+
+        name_key = name.lower()
+        if await _group_name_taken(name_key, exclude_id=oid):
+            return {"error": "A group with this name already exists."}
+
+        update_doc = {
+            "name": name,
+            "nameKey": name_key,
+            "members": members,
+            "updatedAt": datetime.utcnow(),
+        }
+
+        await groups_col.update_one({"_id": oid}, {"$set": update_doc})
+
+        existing.update(update_doc)
+        return {
+            "message": "Group updated successfully.",
+            "group": _serialize_group_doc(existing),
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.delete("/groups/{group_id}")
+async def delete_group(group_id: str):
+    try:
+        oid = _parse_group_object_id(group_id)
+        if not oid:
+            return {"error": "Invalid group id."}
+
+        result = await prop_db.groups.delete_one({"_id": oid})
+
+        if result.deleted_count == 0:
+            return {"message": "Group not found."}
+
+        return {
+            "message": "Group deleted successfully.",
+            "deleted": True,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
 
 def has_changes(existing, new_doc):
     if not existing:

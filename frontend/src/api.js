@@ -430,3 +430,131 @@ export async function deletePropertyFilter(email) {
     return { error: "Failed to delete filter" };
   }
 }
+
+export async function searchGroupUsers(q, limit = 10, excludeIds = []) {
+  try {
+    const response = await axios.get(`${BASE}/groups/users/search`, {
+      params: {
+        q,
+        limit,
+        exclude: excludeIds.length ? excludeIds.join(",") : undefined,
+      },
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to search users",
+    };
+  }
+}
+
+export async function getGroups(page = 1, limit = 10) {
+  try {
+    const response = await axios.get(`${BASE}/groups`, {
+      params: { page, page_size: limit },
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch groups",
+    };
+  }
+}
+
+export async function getGroup(groupId) {
+  try {
+    const response = await axios.get(
+      `${BASE}/groups/${encodeURIComponent(groupId)}`
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch group",
+    };
+  }
+}
+
+export async function createGroup(payload) {
+  try {
+    const response = await axios.post(`${BASE}/groups`, payload);
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to create group",
+    };
+  }
+}
+
+export async function updateGroup(groupId, payload) {
+  try {
+    const response = await axios.put(
+      `${BASE}/groups/${encodeURIComponent(groupId)}`,
+      payload
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to update group",
+    };
+  }
+}
+
+export async function deleteGroup(groupId) {
+  try {
+    const res = await axios.delete(
+      `${BASE}/groups/${encodeURIComponent(groupId)}`
+    );
+    return res.data;
+  } catch (err) {
+    return { error: "Failed to delete group" };
+  }
+}
+
+export async function searchGroups(q, limit = 500, excludeIds = []) {
+  try {
+    const response = await axios.get(`${BASE}/groups/search`, {
+      params: {
+        q,
+        limit,
+        exclude: excludeIds.length ? excludeIds.join(",") : undefined,
+      },
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to search groups",
+    };
+  }
+}
+
+export async function shareWithGroups(payload) {
+  try {
+    const response = await axios.post(`${BASE}/groups/share`, payload);
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to share",
+    };
+  }
+}
