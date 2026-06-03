@@ -52,6 +52,13 @@ from services.ledger_report import (
     fetch_ledger_report,
 )
 
+SHARE_TYPE_INDICATORS = {
+    "property": ("properties", "Property"),
+    "contact": ("contacts", "Contact"),
+    "timetable": ("custom-wyey07pb7", "Timetable"),
+    "cashflow": ("custom-a462rgbzo", "Cashflow"),
+}
+
 fastapi_app = FastAPI()
 
 # --- Load Environment ---
@@ -3635,8 +3642,10 @@ async def share_with_groups(payload: dict):
         pid_raw = payload.get("pid")
         group_ids = payload.get("groupIds") or []
 
-        if share_type not in ("property", "contact"):
-            return {"error": "shareType must be 'property' or 'contact'."}
+        if share_type not in SHARE_TYPE_INDICATORS:
+            return {
+                "error": "shareType must be 'property', 'contact', 'timetable', or 'cashflow'."
+            }
 
         pid_value = _parse_pid_value(pid_raw)
         if pid_value is None:
@@ -3648,7 +3657,7 @@ async def share_with_groups(payload: dict):
         if group_error:
             return {"error": group_error}
 
-        indicator = "properties" if share_type == "property" else "contacts"
+        indicator, label = SHARE_TYPE_INDICATORS[share_type]
         formdatas_col = prop_db.formdatas
 
         doc = await formdatas_col.find_one({
@@ -3657,7 +3666,6 @@ async def share_with_groups(payload: dict):
         })
 
         if not doc:
-            label = "Property" if share_type == "property" else "Contact"
             return {"error": f"{label} not found for PID {pid_value}."}
 
         result = await formdatas_col.update_one(

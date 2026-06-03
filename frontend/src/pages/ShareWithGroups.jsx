@@ -58,10 +58,11 @@ export default function ShareWithGroups() {
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">
-        Share Property or Contact
+        Share with Groups
       </h2>
       <p className="text-sm text-gray-600 mb-4">
-        Enter a property or contact PID and select groups. Property/Contact would be shared with all merchants within that group.
+        Enter a property, contact, timetable, or cashflow PID and select groups.
+        The record will be shared with all merchants in those groups.
       </p>
 
       <form onSubmit={handleShare} className="space-y-4">
@@ -76,6 +77,8 @@ export default function ShareWithGroups() {
           >
             <option value="property">Property</option>
             <option value="contact">Contact</option>
+            <option value="timetable">Timetable</option>
+            <option value="cashflow">Cashflow</option>
           </select>
         </div>
 
