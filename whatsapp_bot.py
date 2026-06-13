@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import io
+import json
 import mimetypes
 import numbers
 import os
@@ -15,8 +16,7 @@ from email.message import EmailMessage
 from time import time
 from typing import Any
 from urllib.parse import quote
-from bson import json_util
-import json
+
 import google.generativeai as genai
 import httpx
 import math
@@ -28,6 +28,7 @@ import socketio
 import uvicorn
 from PIL import Image
 from bson import ObjectId
+from bson import json_util
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks
 from fastapi import FastAPI, Request, HTTPException, Body, Query
@@ -36,22 +37,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from share_property_job import start_property_match_scheduler
 from activity_summary_emails import get_next_hourly_run_greece, start_activity_summary_emails_scheduler
+from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
 from passport_expiry_job import start_passport_expiry_scheduler
 from send_followup_email import start_followup_email_scheduler
 from send_tax_emails import start_tax_emails_scheduler
-from transfer_ownership import start_scheduler, transfer_ownership
-from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
 from services.ledger_report import (
     GROUP_TYPE_CONTACT,
     GROUP_TYPE_PROPERTY,
     build_ledger_excel,
     fetch_ledger_report,
 )
+from share_property_job import start_property_match_scheduler
+from transfer_ownership import start_scheduler, transfer_ownership
 
 SHARE_TYPE_INDICATORS = {
     "property": ("properties", "Property"),
@@ -479,6 +480,29 @@ async def receive(request: Request):
 
         message_id = msg["id"]
 
+        # --- Update contact profile (name / picture) from webhook when present ---
+        contacts = entry.get("contacts")
+        if contacts and len(contacts) > 0:
+            contact = contacts[0]
+            profile = contact.get("profile") or {}
+            name = profile.get("name", "").strip() or None
+            # Meta may send profile picture URL in some payloads (e.g. profile.picture)
+            profile_pic = profile.get("picture") or profile.get("image") or profile.get("profile_pic")
+            if name or profile_pic:
+                update_fields = {}
+                if name:
+                    update_fields["name"] = name
+                if profile_pic:
+                    url = profile_pic if isinstance(profile_pic, str) else (profile_pic.get("url") or profile_pic.get("link"))
+                    if url:
+                        update_fields["profilePicUrl"] = url
+                if update_fields:
+                    await configs_collection.update_one(
+                        {"clientNumber": from_number},
+                        {"$set": {**update_fields, "updatedAt": datetime.utcnow()}},
+                        upsert=True
+                    )
+
         # --- Prevent duplicate replies ---
         if message_id in processed_message_ids:
             print(f"⚠️ Duplicate message detected: {message_id} — skipping")
@@ -656,11 +680,12 @@ async def receive(request: Request):
 async def ensure_indexes():
     await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
     await prop_db.groups.create_index("nameKey", unique=True)
-    await transfer_ownership(prop_db)
     start_tax_emails_scheduler(prop_db)
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
     start_daily_activity_emails_scheduler(prop_db, db)
+    # Do not block API readiness on a long ownership transfer run.
+    asyncio.create_task(transfer_ownership(prop_db))
     start_activity_summary_emails_scheduler(db)
     start_lease_expiry_scheduler(db, prop_db)
     start_passport_expiry_scheduler(db, prop_db)
@@ -738,7 +763,8 @@ async def get_conversations(
                         {"$arrayElemAt": ["$client.name", 0]},
                         ""
                     ]
-                }
+                },
+                "profilePicUrl": {"$arrayElemAt": ["$client.profilePicUrl", 0]}
             }
         },
 
@@ -761,7 +787,8 @@ async def get_conversations(
                 doc["lastTimestamp"].isoformat()
                 if doc.get("lastTimestamp")
                 else None
-            )
+            ),
+            "profilePicUrl": doc.get("profilePicUrl"),
         })
 
     count_pipeline = [
@@ -826,6 +853,14 @@ async def get_client_config(clientNumber: str):
 
     return {"clientNumber": clientNumber, "botEnabled": config.get("botEnabled", True)}
 
+# --- 🟢 GET /profile-photo endpoint ---
+@fastapi_app.get("/profile-photo/{client_number:path}")
+async def get_profile_photo(client_number: str):
+    """Return profile picture URL for a contact if we have it (e.g. from webhook)."""
+    doc = await configs_collection.find_one({"clientNumber": client_number})
+    url = doc.get("profilePicUrl") if doc else None
+    return {"url": url}
+
 def _build_prop360_contact_payload(name: str, phone: str, info: str) -> dict:
     return {
         "data": {
@@ -880,14 +915,15 @@ async def create_contact_in_prop360(name: str, phone: str, info: str) -> str:
 # --- 🟢 GET /details endpoint ---
 @fastapi_app.get("/details")
 async def get_details(client: str):
-    """Fetch name and info for a given client number"""
+    """Fetch name, info and profile picture for a given client number"""
     doc = await configs_collection.find_one({"clientNumber": client})
     if not doc:
         # If not found, return empty fields for frontend to fill
-        return {"name": "", "info": ""}
+        return {"name": "", "info": "", "profilePicUrl": None}
     return {
         "name": doc.get("name", ""),
-        "info": doc.get("info", "")
+        "info": doc.get("info", ""),
+        "profilePicUrl": doc.get("profilePicUrl"),
     }
 
 # --- 🟢 PUT /details endpoint ---
