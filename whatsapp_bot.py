@@ -93,6 +93,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 gen_model = genai.GenerativeModel("gemini-2.5-flash")
 
 PROP360_URL = "https://prop360.pro/api/merchant/form_data"
+PROP360_INTEGRATION_BASE_URL = "https://prop360.pro/api/integration"
 PROP_AUTH_TOKEN = os.getenv("PROP360_BEARER_TOKEN")
 
 # ----------------------------
@@ -825,6 +826,57 @@ async def get_client_config(clientNumber: str):
 
     return {"clientNumber": clientNumber, "botEnabled": config.get("botEnabled", True)}
 
+def _build_prop360_contact_payload(name: str, phone: str, info: str) -> dict:
+    return {
+        "data": {
+            "Full Name": name,
+            "Phone Number": phone,
+            "Contact Description": info or "",
+        }
+    }
+
+
+def _extract_prop360_contact_id(result: dict) -> str | None:
+    contact_id = result.get("contact", {}).get("id") or result.get("data", {}).get("id")
+    if contact_id:
+        return str(contact_id)
+    return None
+
+
+async def create_contact_in_prop360(name: str, phone: str, info: str) -> str:
+    if not PROP_AUTH_TOKEN:
+        raise HTTPException(status_code=500, detail="PROP360_BEARER_TOKEN is not configured")
+
+    payload = _build_prop360_contact_payload(name, phone, info)
+    headers = {
+        "Authorization": f"Bearer {PROP_AUTH_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{PROP360_INTEGRATION_BASE_URL}/contacts",
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+
+    if resp.status_code not in (200, 201):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to create contact in Prop360: {resp.status_code} {resp.text}",
+        )
+
+    contact_id = _extract_prop360_contact_id(resp.json())
+    if not contact_id:
+        raise HTTPException(
+            status_code=502,
+            detail="Prop360 contact creation succeeded but no contact id was returned",
+        )
+
+    return contact_id
+
+
 # --- 🟢 GET /details endpoint ---
 @fastapi_app.get("/details")
 async def get_details(client: str):
@@ -841,24 +893,46 @@ async def get_details(client: str):
 # --- 🟢 PUT /details endpoint ---
 @fastapi_app.put("/details")
 async def update_details(request: Request):
-    """Update or create client details"""
+    """Update or create client details; create Prop360 contact only on first save"""
     body = await request.json()
     client_number = body.get("client")
-    name = body.get("name", "")
-    info = body.get("info", "")
+    name = (body.get("name") or "").strip()
+    info = body.get("info", "") or ""
 
     if not client_number:
         raise HTTPException(status_code=400, detail="Client number is required")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
 
-    # Upsert document (update if exists, insert if not)
+    existing = await configs_collection.find_one({"clientNumber": client_number})
+    contact_id = existing.get("contactId") if existing else None
+
+    if not contact_id:
+        contact_id = await create_contact_in_prop360(name, client_number, info)
+
+    update_fields = {
+        "name": name,
+        "info": info,
+        "updatedAt": datetime.utcnow(),
+    }
+    if not existing or not existing.get("contactId"):
+        update_fields["contactId"] = contact_id
+
     await configs_collection.update_one(
         {"clientNumber": client_number},
-        {"$set": {"name": name, "info": info, "updatedAt": datetime.utcnow()}},
-        upsert=True
+        {"$set": update_fields},
+        upsert=True,
     )
 
-    print(f"✅ Updated details for {client_number}: name={name}, info={info}")
-    return {"status": "success", "message": "Details updated"}
+    print(
+        f"✅ Updated details for {client_number}: "
+        f"name={name}, info={info}, contactId={contact_id}"
+    )
+    return {
+        "status": "success",
+        "message": "Details updated",
+        "contactId": contact_id,
+    }
 
 
 @fastapi_app.api_route("/", methods=["GET", "POST", "HEAD"])
