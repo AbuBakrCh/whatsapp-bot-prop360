@@ -3,8 +3,10 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 DEFAULT_ACTIVITY_PAGE_SIZE = 10
+GREECE_TZ = ZoneInfo("Europe/Athens")
 
 import pandas as pd
 
@@ -245,16 +247,9 @@ def parse_sort_datetime(value: Any) -> datetime | None:
 def format_date(value: Any) -> str:
     parsed = parse_sort_datetime(value)
     if parsed:
-        return parsed.strftime("%Y-%m-%d")
+        return parsed.astimezone(GREECE_TZ).strftime("%d-%m-%Y")
     text = str(value).strip() if value is not None else ""
     return text[:10] if len(text) >= 10 else text
-
-
-def format_datetime(value: Any) -> str:
-    parsed = parse_sort_datetime(value)
-    if parsed:
-        return parsed.strftime("%Y-%m-%d %H:%M")
-    return ""
 
 
 def normalize_debit_credit(value: Any) -> str | None:
@@ -304,7 +299,7 @@ def parse_activity_document(doc: dict) -> dict | None:
     activity_id = str(doc.get("_id", ""))
     return {
         "id": activity_id,
-        "date": format_datetime(activity_date),
+        "date": format_date(activity_date),
         "description": description,
         "_sort_date": activity_date,
     }
