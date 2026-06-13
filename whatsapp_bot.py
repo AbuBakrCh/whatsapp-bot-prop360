@@ -37,6 +37,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from share_property_job import start_property_match_scheduler
+from activity_summary_emails import get_next_hourly_run_greece, start_activity_summary_emails_scheduler
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
@@ -659,6 +660,7 @@ async def ensure_indexes():
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
     start_daily_activity_emails_scheduler(prop_db, db)
+    start_activity_summary_emails_scheduler(db)
     start_lease_expiry_scheduler(db, prop_db)
     start_passport_expiry_scheduler(db, prop_db)
     start_ide_expiry_scheduler(db, prop_db)
@@ -2804,6 +2806,17 @@ async def get_activity_summary_progress(job_id: str):
         traceback.print_exc()
         return {"error": str(e)}
 
+def _serialize_summary_doc(doc: dict) -> dict:
+    doc["_id"] = str(doc["_id"])
+    for key in ("createdAt", "updatedAt", "periodStart", "periodEnd", "scheduledSendAt", "emailSentAt"):
+        value = doc.get(key)
+        if value is not None and hasattr(value, "isoformat"):
+            doc[key] = value.isoformat() + "Z"
+        elif value is not None and isinstance(value, str) and key == "scheduledSendAt" and not value.endswith("Z"):
+            doc[key] = value + "Z" if "T" in value else value
+    return doc
+
+
 @fastapi_app.get("/property-activity-summaries")
 async def get_property_activity_summaries():
     try:
@@ -2811,9 +2824,15 @@ async def get_property_activity_summaries():
         cursor = summary_col.find({}).sort("createdAt", -1).limit(50)  # latest 50
         results = await cursor.to_list(length=None)
 
-        # Optionally, convert ObjectId to string for JSON serialization
         for doc in results:
-            doc["_id"] = str(doc["_id"])
+            if doc.get("status") == "ready to send":
+                scheduled = get_next_hourly_run_greece()
+                doc["scheduledSendAt"] = scheduled
+                await summary_col.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"scheduledSendAt": scheduled, "updatedAt": datetime.utcnow()}},
+                )
+            _serialize_summary_doc(doc)
 
         return {
             "count": len(results),
@@ -2827,11 +2846,35 @@ async def get_property_activity_summaries():
 @fastapi_app.patch("/activity-summary/{summary_id}/status")
 async def update_activity_summary_status(summary_id: str, payload: dict):
     new_status = payload.get("status")
-    await db.property_activity_summary.update_one(
+    if new_status not in ("pending", "ready to send"):
+        return {"error": "status must be 'pending' or 'ready to send'"}
+
+    summary_col = db.property_activity_summary
+    existing = await summary_col.find_one({"_id": ObjectId(summary_id)})
+    if not existing:
+        return {"error": "Summary not found"}
+
+    current_status = existing.get("status")
+    if new_status == "pending" and current_status != "ready to send":
+        return {"error": "Only 'ready to send' summaries can be reverted to pending"}
+    if new_status == "ready to send" and current_status != "pending":
+        return {"error": "Only 'pending' summaries can be marked ready to send"}
+
+    update_fields: dict = {"status": new_status, "updatedAt": datetime.utcnow()}
+    if new_status == "ready to send":
+        update_fields["scheduledSendAt"] = get_next_hourly_run_greece()
+    else:
+        update_fields["scheduledSendAt"] = None
+
+    await summary_col.update_one(
         {"_id": ObjectId(summary_id)},
-        {"$set": {"status": new_status, "updatedAt": datetime.utcnow()}}
+        {"$set": update_fields}
     )
-    return {"success": True}
+    scheduled = update_fields.get("scheduledSendAt")
+    return {
+        "success": True,
+        "scheduledSendAt": (scheduled.isoformat() + "Z") if scheduled else None,
+    }
 
 @fastapi_app.post("/jobs/daily-activity")
 async def control_daily_activity_job(action: str):
