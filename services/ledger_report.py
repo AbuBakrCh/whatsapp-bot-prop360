@@ -392,7 +392,7 @@ def parse_cashflow_document(doc: dict) -> dict | None:
     cashflow_id = str(doc.get("_id", ""))
     return {
         "id": cashflow_id,
-        "date": format_datetime(cashflow_date),
+        "date": format_date(cashflow_date),
         "description": str(data.get(FIELD_DESCRIPTION) or "").strip(),
         "amount": parse_amount(data.get(FIELD_AMOUNT)),
         "type": entry_type,
