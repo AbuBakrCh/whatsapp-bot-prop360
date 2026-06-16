@@ -43,6 +43,8 @@ async def transfer_ownership(prop_db):
     - Sets new merchantId
     - Duplicate executions are safe
     - Docs starting with api-token- are only shared, not ownership changed
+    - API-token share is skipped when both spitogatos_url and spitogatos are null
+    - API-token share always adds Kostas merchantId to sharedWithMerchants
     """
     if not _is_job_enabled():
         logger.info("transfer_ownership is disabled. Skipping execution.")
@@ -71,6 +73,8 @@ async def transfer_ownership(prop_db):
     formdatas_col = prop_db.formdatas
     users_col = prop_db.users
 
+    KOSTAS_MERCHANT_ID = "34137234-52fe-430c-a97d-df3e16525e71"
+
     # --------------------------------------------------
     # Step 1a: Share API-token docs only
     # --------------------------------------------------
@@ -80,7 +84,11 @@ async def transfer_ownership(prop_db):
             "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo"]},
             "metadata.createdBy": {"$regex": "^api-token-"},
             "metadata.apiShared": {"$ne": True},
-            "metadata.ownershipTransferred": {"$ne": True}
+            "metadata.ownershipTransferred": {"$ne": True},
+            "$and": [
+                {"spitogatos_url": None},
+                {"spitogatos": None},
+            ],
         },
         [
             {
@@ -88,7 +96,7 @@ async def transfer_ownership(prop_db):
                     "sharedWithMerchants": {
                         "$setUnion": [
                             {"$ifNull": ["$sharedWithMerchants", []]},
-                            ["$merchantId"]
+                            ["$merchantId", KOSTAS_MERCHANT_ID],
                         ]
                     },
                     "metadata.apiShared": True
