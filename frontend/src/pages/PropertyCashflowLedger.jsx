@@ -116,13 +116,14 @@ function LedgerTable({ title, section, accentClass }) {
               <th className="text-left px-3 py-2 font-medium text-gray-700">
                 Transaction Description
               </th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700">Category</th>
               <th className="text-right px-3 py-2 font-medium text-gray-700">Amount</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-gray-400">
+                <td colSpan={5} className="px-3 py-6 text-center text-gray-400">
                   No transactions
                 </td>
               </tr>
@@ -146,6 +147,7 @@ function LedgerTable({ title, section, accentClass }) {
                     )}
                   </td>
                   <td className="px-3 py-2">{row.description || "—"}</td>
+                  <td className="px-3 py-2">{row.category || "—"}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {Number(row.amount).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
@@ -156,7 +158,7 @@ function LedgerTable({ title, section, accentClass }) {
               ))
             )}
             <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-              <td className="px-3 py-2" colSpan={3}>
+              <td className="px-3 py-2" colSpan={4}>
                 Total
               </td>
               <td className="px-3 py-2 text-right">

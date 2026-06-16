@@ -20,6 +20,7 @@ FIELD_DATE = "field-1757605069078-p5plna7qr"
 FIELD_DESCRIPTION = "field-1757605219384-fikyy3d7u"
 FIELD_AMOUNT = "field-1757605508754-uea4iadqd"
 FIELD_DEBIT_CREDIT = "field-1757605718340-ue95ozr9u"
+FIELD_CATEGORY = "field-1780751488281-e84mgqaeo"
 FIELD_CASHFLOW_CONTACT = "field-1761124961032-67lj21506"
 
 GROUP_TYPE_PROPERTY = "property"
@@ -389,6 +390,7 @@ def parse_cashflow_document(doc: dict) -> dict | None:
         "id": cashflow_id,
         "date": format_date(cashflow_date),
         "description": str(data.get(FIELD_DESCRIPTION) or "").strip(),
+        "category": str(data.get(FIELD_CATEGORY) or "").strip(),
         "amount": parse_amount(data.get(FIELD_AMOUNT)),
         "type": entry_type,
         "_sort_date": cashflow_date,
@@ -415,6 +417,7 @@ def build_ledger(transactions: list[dict]) -> dict:
             "id": tx.get("id", ""),
             "date": tx["date"],
             "description": tx["description"],
+            "category": tx.get("category", ""),
             "amount": tx["amount"],
             "url": tx.get("url", ""),
         }
@@ -619,7 +622,7 @@ def build_ledger_excel(ledger: dict) -> bytes:
     group_id = ledger.get("groupId") or ""
     group_name = ledger.get("groupName") or ""
 
-    excel_width = 9
+    excel_width = 11
     rows: list[list[Any]] = [
         ["Group Type", group_type] + [""] * (excel_width - 2),
         ["Group ID", group_id] + [""] * (excel_width - 2),
@@ -629,14 +632,16 @@ def build_ledger_excel(ledger: dict) -> bytes:
             "Date",
             "Link",
             "Transaction Description",
+            "Category",
             "Amount",
             "",
             "Date",
             "Link",
             "Transaction Description",
+            "Category",
             "Amount",
         ],
-        ["DEBIT", "", "", "", "CREDIT", "", "", "", ""],
+        ["DEBIT", "", "", "", "", "CREDIT", "", "", "", "", ""],
     ]
 
     for index in range(max_len):
@@ -647,11 +652,13 @@ def build_ledger_excel(ledger: dict) -> bytes:
                 debit.get("date", ""),
                 debit.get("url", ""),
                 debit.get("description", ""),
+                debit.get("category", ""),
                 debit.get("amount", ""),
                 "",
                 credit.get("date", ""),
                 credit.get("url", ""),
                 credit.get("description", ""),
+                credit.get("category", ""),
                 credit.get("amount", ""),
             ]
         )
@@ -660,8 +667,10 @@ def build_ledger_excel(ledger: dict) -> bytes:
         [
             "",
             "",
+            "",
             "Total",
             ledger["debit"]["sum"],
+            "",
             "",
             "",
             "",

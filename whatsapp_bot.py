@@ -95,7 +95,7 @@ gen_model = genai.GenerativeModel("gemini-2.5-flash")
 
 PROP360_URL = "https://prop360.pro/api/merchant/form_data"
 PROP360_INTEGRATION_BASE_URL = "https://prop360.pro/api/integration"
-PROP_AUTH_TOKEN = os.getenv("PROP360_BEARER_TOKEN")
+PROP_AUTH_TOKEN = "prop360_aad4dbd7a9f294499334ae2075991ea1c6d321a12c5fa9a2bb3fce15a3bbce85"
 
 # ----------------------------
 # --- MongoDB (motor async)

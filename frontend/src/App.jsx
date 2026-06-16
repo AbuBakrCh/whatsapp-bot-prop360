@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { isMessengerEnabled } from './config/messenger'
 
 const sections = [
   { to: '/utilities', label: 'Utilities', description: 'Email, contacts, properties, jobs, and more' },
@@ -9,7 +10,17 @@ const sections = [
   { to: '/groups', label: 'Groups', description: 'Manage and share with contact groups' },
 ]
 
+const messengerSection = {
+  to: '/messenger',
+  label: 'WhatsApp Messenger',
+  description: 'View and reply to WhatsApp conversations',
+}
+
 export default function App() {
+  const visibleSections = isMessengerEnabled()
+    ? [messengerSection, ...sections]
+    : sections
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <div className="h-[70px] px-4 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
@@ -27,7 +38,7 @@ export default function App() {
         <p className="text-gray-500 mb-8">Select a section to get started.</p>
 
         <div className="grid gap-4">
-          {sections.map(({ to, label, description }) => (
+          {visibleSections.map(({ to, label, description }) => (
             <Link
               key={to}
               to={to}
