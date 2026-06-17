@@ -1,11 +1,10 @@
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-import asyncio
-
 from services.commons import send_email_v2
 
 scheduler = AsyncIOScheduler()
@@ -90,6 +89,7 @@ async def send_passport_email(db, person_name, person_url, passport_end_date_utc
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
         None,
+        send_email_v2,
         recipients,
         subject,
         body,
@@ -180,3 +180,6 @@ def start_passport_expiry_scheduler(db, prop_db):
         misfire_grace_time=3600,
     )
     scheduler.start()
+    # Run once on deploy/startup so catch-up is not blocked until the daily cron.
+    asyncio.create_task(passport_expiry_check(db, prop_db))
+    logger.info("Passport expiry check queued for startup run")
