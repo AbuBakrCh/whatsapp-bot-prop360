@@ -31,7 +31,7 @@ from bson import ObjectId
 from bson import json_util
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks
-from fastapi import FastAPI, Request, HTTPException, Body, Query
+from fastapi import FastAPI, Request, HTTPException, Body, Query, UploadFile, File
 from fastapi import Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -51,6 +51,7 @@ from services.ledger_report import (
     build_ledger_excel,
     fetch_ledger_report,
 )
+from services.cashflow_document_extractor import extract_cashflow_data_from_document
 from share_property_job import start_property_match_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
 
@@ -65,6 +66,11 @@ fastapi_app = FastAPI()
 
 # --- Load Environment ---
 load_dotenv()
+
+
+def scheduled_jobs_enabled() -> bool:
+    return os.getenv("SCHEDULED_JOBS_ENABLED", "true").lower() == "true"
+
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
@@ -680,6 +686,10 @@ async def receive(request: Request):
 async def ensure_indexes():
     await messages_collection.create_index([("clientNumber", 1), ("timestamp", 1)])
     await prop_db.groups.create_index("nameKey", unique=True)
+    if not scheduled_jobs_enabled():
+        print("SCHEDULED_JOBS_ENABLED=false — all scheduled jobs skipped")
+        return
+
     start_tax_emails_scheduler(prop_db)
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
@@ -1252,6 +1262,36 @@ async def process_from_drive_folder(folder_link: str = Body(...), auth_token: st
                 })
 
     return {"processed": all_results}
+
+
+@fastapi_app.post("/cashflows/extract-from-document")
+async def extract_cashflow_from_document(
+    file: UploadFile = File(...),
+    document_type: str = Query(..., description="Document type, e.g. electricity_bill"),
+):
+    """
+    Extract Prop360 cashflow `data` fields from a bill document (PDF/image).
+    Currently supports: electricity_bill
+    """
+    try:
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+        data = extract_cashflow_data_from_document(
+            file_bytes,
+            document_type=document_type,
+            filename=file.filename,
+        )
+        return {"data": data}
+    except ValueError as exc:
+        detail = str(exc)
+        if "not supported" in detail.lower():
+            raise HTTPException(status_code=422, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @fastapi_app.get("/utilities/duplicates")
