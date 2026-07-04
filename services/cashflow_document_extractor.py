@@ -16,11 +16,15 @@ import google.generativeai as genai
 from PIL import Image
 
 DOCUMENT_TYPE_ELECTRICITY_BILL = "Electricity Bill"
+DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
 
 SUPPORTED_DOCUMENT_TYPES = {
     "electricity_bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
     "electricity bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
     "electricity-bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
+    "common_expenses": DOCUMENT_TYPE_COMMON_EXPENSES,
+    "common expenses": DOCUMENT_TYPE_COMMON_EXPENSES,
+    "common-expenses": DOCUMENT_TYPE_COMMON_EXPENSES,
 }
 
 # Prop360 field IDs — electricity bill cashflow entries
@@ -40,6 +44,13 @@ FIELD_SERVICE_PERIOD = "field-1780046954441-ee7gfecma"
 FIELD_RF_PAYMENT_CODE = "field-1781250415587-3dmfxioiz"
 FIELD_WHO_GETS_MONEY_ALT = "field-1781346694051-dsbih9jen"
 
+# Prop360 field IDs — common expenses cashflow entries
+FIELD_TENANT_SHARE = "field-1779680012572-nc7n1lhm9"
+FIELD_LANDLORD_SHARE = "field-1779680020866-s70nwdm41"
+FIELD_MANAGEMENT_COMPANY = "field-1779680027992-o2rv2qvc4"
+FIELD_EXPENSE_PERIOD = "field-1779680031528-6z5osildo"
+FIELD_TOTAL_AMOUNT = "field-1757605508754-uea4iadqd"
+
 # Fields the caller sets manually — never include in API response
 EXCLUDED_RESPONSE_FIELDS = frozenset({
     "field-1757605637506-70de9chi5",  # property id
@@ -50,26 +61,92 @@ EXCLUDED_RESPONSE_FIELDS = frozenset({
 
 ELECTRICITY_BILL_EXTRACTION_SCHEMA = {
     "previous_balance_due": (
-        "Previous unpaid / overdue balance (section B / Προηγούμενο Ανεξόφλητο Ποσό / Ληξιπρόθεσμο). "
-        "Numeric string with dot decimal. Use 0 if none."
+        "Previous unpaid / overdue balance in euros — amount owed from prior bills, "
+        "not the current bill total. Look for equivalent labels such as "
+        "Προηγούμενο Ανεξόφλητο Ποσό, Ληξιπρόθεσμο Ποσό, Previous Balance, "
+        "Outstanding Balance, Prior Amount Due, Section B balance. "
+        "Numeric string with dot decimal. Leave empty if not found."
     ),
-    "matching_number": "Matching / document number (ΑΡ. ΕΓΓΡΑΦΟΥ) if present.",
-    "overdue_payment": (
-        "Whether there is an overdue payment notice on the bill. "
-        "Answer exactly 'Yes' or 'No'."
+    "matching_number": (
+        "Document / invoice / bill reference number used for matching. "
+        "Look for equivalent labels such as ΑΡ. ΕΓΓΡΑΦΟΥ, Document No, Invoice No, "
+        "Bill Number, Reference No, Account Document. Leave empty if not found."
     ),
-    "electricity_meter_no": "Electricity supply / meter number (ΑΡ. ΠΑΡΟΧΗΣ) if present.",
-    "electricity_account_no": "Electricity customer / account code (ΚΩΔΙΚΟΣ ΠΕΛΑΤΗ) if present.",
-    "who_gets_money": "Company that receives payment (utility provider name, e.g. ΖΕΝΙΘ, ΔΕΗ).",
+    "electricity_meter_no": (
+        "Electricity supply point / meter / provision number. "
+        "Look for equivalent labels such as ΑΡ. ΠΑΡΟΧΗΣ, Supply Number, Meter No, "
+        "POD, Point of Delivery, Supply Point ID. Leave empty if not found."
+    ),
+    "electricity_account_no": (
+        "Customer / account / contract code for the electricity supply. "
+        "Look for equivalent labels such as ΚΩΔΙΚΟΣ ΠΕΛΑΤΗ, Customer Code, "
+        "Account Number, Contract No, Client ID. Leave empty if not found."
+    ),
+    "who_gets_money": (
+        "Electricity provider / retailer company that receives payment. "
+        "Usually the company logo or name on the bill header (utility supplier). "
+        "Return the company name as printed. Leave empty if unclear."
+    ),
     "final_interim_bill": (
-        "Bill type. Use 'Final' for Greek Εκκαθαριστικός, 'Interim' for estimated bills, "
-        "or the closest English equivalent on the document."
+        "Bill settlement type. Return 'Final' for settlement/accrual/clearance bills "
+        "(e.g. Εκκαθαριστικός, Final Bill, Settlement). "
+        "Return 'Interim' for estimated/provisional bills (e.g. Ενδιάμεσος, Estimated). "
+        "Leave empty if unclear."
     ),
-    "payment_due_date": "Payment due date as YYYY-MM-DD.",
-    "receipt_no": "Receipt number if present and distinct from matching number; otherwise same as matching number.",
-    "service_period_start": "Service / consumption period start as YYYY-MM-DD.",
-    "service_period_end": "Service / consumption period end as YYYY-MM-DD.",
-    "rf_payment_code": "RF payment code (Κωδικός Πληρωμής) if present.",
+    "payment_due_date": (
+        "Payment due date. Return as YYYY-MM-DD regardless of how it appears on the document."
+    ),
+    "receipt_no": (
+        "Receipt or document number if explicitly labeled as receipt. "
+        "Leave empty if not distinct from the matching/document number."
+    ),
+    "service_period": (
+        "Consumption or billing service period exactly as shown on the document "
+        "(e.g. 10/11/2025 - 08/12/2025, June 2026, 01/01/2026-31/01/2026). "
+        "Preserve original date format and language. Leave empty if not found."
+    ),
+    "rf_payment_code": (
+        "Payment reference / RF / Rf code for bank payment. "
+        "Look for equivalent labels such as Κωδικός Πληρωμής, Payment Code, RF Code, "
+        "Payment Reference. Leave empty if not found."
+    ),
+}
+
+COMMON_EXPENSES_EXTRACTION_SCHEMA = {
+    "tenant_share": (
+        "Tenant payable amount in euros. Look for labels such as "
+        "ΠΟΣΟ ΕΝΟΙΚΙΑΣΤΗ, Tenant Amount, Tenant Share, Ενοικιαστής. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "landlord_share": (
+        "Owner/landlord payable amount in euros. Look for labels such as "
+        "ΠΟΣΟ ΙΔΙΟΚΤΗΤΗ, Owner Amount, Landlord Share, Ιδιοκτήτης. "
+        "Numeric string with dot decimal. Use 0 only if explicitly shown as zero."
+    ),
+    "previous_balance_due": (
+        "Previous outstanding/unpaid balance in euros. Look for labels such as "
+        "ΠΡΟΗΓΟΥΜΕΝΟ ΥΠΟΛΟΙΠΟ, ΠΡΟΗΓ. ΟΦΕΙΛΕΣ, ΠΡ.ΑΝΕΙΣΠΡΑΚΤΕΣ, Outstanding Balance, "
+        "Previous Balance, Ανείσπρακτες. Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "management_company": (
+        "Management company issuing the common expenses invoice "
+        "(building management / διαχείριση κτιρίων). Return the company name as printed."
+    ),
+    "expense_period": (
+        "Billing/expense period as shown on the invoice "
+        "(e.g. ΙΟΥΝΙΟΣ 2026, June 2026, 06/2026). Preserve original language and format."
+    ),
+    "who_gets_money": (
+        "Payee company receiving the payment — usually the management company on the invoice header/footer. "
+        "Do NOT use individual bank account holder names (Δικαιούχος). "
+        "Leave empty if unclear."
+    ),
+    "total_amount": (
+        "Final payable amount in euros. Look for labels such as "
+        "ΣΥΝΟΛΟ, ΠΛΗΡΩΤΕΟ, ΤΕΛΙΚΟ ΠΛΗΡΩΤΕΟ, TOTAL DUE, FINAL AMOUNT, "
+        "ΣΥΝΟΛΟ ΥΠΟΛΟΙΠΟ, ΣΥΝΟΛ.ΥΠΟΛΟΙΠΟ, ΠΛΗΡΩΤΕΟ ΠΟΣΟ. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
 }
 
 _gen_model: genai.GenerativeModel | None = None
@@ -82,6 +159,8 @@ def normalize_document_type(document_type: str) -> str | None:
         return SUPPORTED_DOCUMENT_TYPES[key]
     if document_type.strip() == DOCUMENT_TYPE_ELECTRICITY_BILL:
         return DOCUMENT_TYPE_ELECTRICITY_BILL
+    if document_type.strip() == DOCUMENT_TYPE_COMMON_EXPENSES:
+        return DOCUMENT_TYPE_COMMON_EXPENSES
     return None
 
 
@@ -138,25 +217,6 @@ def _parse_amount(value: Any) -> str:
         return text
 
 
-def _format_service_period(start: str, end: str) -> str:
-    start_fmt = _format_display_date(start)
-    end_fmt = _format_display_date(end)
-    if start_fmt and end_fmt:
-        return f"{start_fmt} - {end_fmt} "
-    return ""
-
-
-def _format_display_date(value: str) -> str:
-    if not value:
-        return ""
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
-        try:
-            return datetime.strptime(value.strip(), fmt).strftime("%d/%m/%Y")
-        except ValueError:
-            continue
-    return value.strip()
-
-
 def _to_iso_due_date(value: str) -> str:
     if not value:
         return ""
@@ -177,27 +237,53 @@ def _to_iso_due_date(value: str) -> str:
 
 
 def _normalize_provider(value: str) -> str:
-    if not value:
+    return value.strip()
+
+
+def _normalize_service_period(value: str) -> str:
+    text = value.strip()
+    if not text:
         return ""
-    upper = value.strip().upper()
-    aliases = {
-        "ZENITH": "ΖΕΝΙΘ",
-        "ZENIΘ": "ΖΕΝΙΘ",
-    }
-    return aliases.get(upper, upper)
+    if not text.endswith(" "):
+        text = f"{text} "
+    return text
 
 
-def _normalize_yes_no(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    if text in ("yes", "y", "true", "1"):
-        return "Yes"
-    if text in ("no", "n", "false", "0"):
-        return "No"
-    return str(value or "").strip()
+def _parse_amount_optional(value: Any) -> str | None:
+    parsed = _parse_amount(value)
+    return parsed if parsed else None
 
 
-def _extract_electricity_bill_with_gemini(
-    file_bytes: bytes, filename: str | None = None
+def _amount_is_positive(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        return float(value) > 0
+    except ValueError:
+        return False
+
+
+def _omit_unextracted_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop empty values; keep numeric zero when explicitly present."""
+    result: dict[str, Any] = {}
+    for key, value in data.items():
+        if key in EXCLUDED_RESPONSE_FIELDS:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        result[key] = value
+    return result
+
+
+def _extract_with_gemini(
+    file_bytes: bytes,
+    *,
+    filename: str | None,
+    schema: dict[str, str],
+    document_description: str,
+    extra_rules: str = "",
 ) -> dict[str, Any]:
     file_type = detect_file_type(file_bytes, filename)
     if not file_type:
@@ -208,11 +294,9 @@ def _extract_electricity_bill_with_gemini(
         "data": file_bytes,
     }
 
-    schema_lines = "\n".join(
-        f'  "{key}": "{desc}"' for key, desc in ELECTRICITY_BILL_EXTRACTION_SCHEMA.items()
-    )
+    schema_lines = "\n".join(f'  "{key}": "{desc}"' for key, desc in schema.items())
     prompt = f"""
-You are a data extraction engine for Greek electricity bills.
+You are a data extraction engine for {document_description}.
 
 Read the attached document and return ONE JSON object with exactly these keys:
 {{
@@ -221,11 +305,12 @@ Read the attached document and return ONE JSON object with exactly these keys:
 
 Rules:
 - Return JSON only. No markdown, no commentary.
-- Use empty string for missing text fields and "0" for missing numeric amounts.
-- Dates must use YYYY-MM-DD.
+- Do NOT guess or infer values. Use empty string for any field you cannot confidently read.
 - Numeric amounts must use dot as decimal separator, no currency symbols.
-- overdue_payment must be exactly "Yes" or "No".
-- If a disconnection / overdue notice is shown, overdue_payment is "Yes".
+- The document layout may vary by issuer — use semantic understanding, not fixed positions.
+- Support Greek and English labels and equivalent terminology.
+- Handle OCR variations and minor recognition errors.
+{extra_rules}
 """
 
     response = _get_model().generate_content([prompt, encoded])
@@ -236,38 +321,125 @@ Rules:
         raise ValueError(f"Failed to parse extraction response as JSON: {raw[:500]}") from exc
 
 
+def _extract_electricity_bill_with_gemini(
+    file_bytes: bytes, filename: str | None = None
+) -> dict[str, Any]:
+    return _extract_with_gemini(
+        file_bytes,
+        filename=filename,
+        schema=ELECTRICITY_BILL_EXTRACTION_SCHEMA,
+        document_description=(
+            "electricity bills and invoices from any utility provider, "
+            "in any layout, language (Greek or English), or format"
+        ),
+        extra_rules="""
+- Templates vary widely across providers — extract by meaning, not by layout or coordinates.
+- Do NOT assume a specific company, logo, or invoice template.
+- Recognize equivalent terminology rather than exact labels.
+- payment_due_date must be YYYY-MM-DD when confidently extracted.
+- For previous_balance_due, use 0 only when the document explicitly shows zero prior balance.
+""",
+    )
+
+
+def _extract_common_expenses_with_gemini(
+    file_bytes: bytes, filename: str | None = None
+) -> dict[str, Any]:
+    return _extract_with_gemini(
+        file_bytes,
+        filename=filename,
+        schema=COMMON_EXPENSES_EXTRACTION_SCHEMA,
+        document_description=(
+            "Greek common expenses (κοινόχρηστα) building maintenance invoices "
+            "from property management companies"
+        ),
+        extra_rules="""
+- Templates vary widely — extract by meaning, not by layout.
+- For landlord_share, return "0" when the owner/landlord amount is explicitly zero or absent while tenant share is present.
+- who_gets_money should be the management company, not an individual bank beneficiary (Δικαιούχος).
+""",
+    )
+
+
 def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     provider = _normalize_provider(extracted.get("who_gets_money", ""))
     matching_number = (extracted.get("matching_number") or "").strip()
-    receipt_no = (extracted.get("receipt_no") or matching_number).strip()
-    previous_balance = _parse_amount(extracted.get("previous_balance_due"))
-    overdue_payment = _normalize_yes_no(extracted.get("overdue_payment"))
-    if not overdue_payment and previous_balance not in ("", "0", "0.0", "0.00"):
-        overdue_payment = "Yes"
-    elif not overdue_payment:
-        overdue_payment = "No"
+    receipt_no = (extracted.get("receipt_no") or "").strip()
+    previous_balance = _parse_amount_optional(extracted.get("previous_balance_due"))
+    service_period = _normalize_service_period(extracted.get("service_period", ""))
+    due_date = _to_iso_due_date(extracted.get("payment_due_date", ""))
 
-    data = {
+    data: dict[str, Any] = {
         FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_ELECTRICITY_BILL,
         FIELD_CATEGORY: "Accrual",
-        FIELD_DEBIT_CREDIT: "Debit",
-        FIELD_PREVIOUS_BALANCE_DUE: previous_balance,
-        FIELD_MATCHING_NUMBER: matching_number,
-        FIELD_OVERDUE_PAYMENT: overdue_payment,
-        FIELD_ELECTRICITY_METER_NO: (extracted.get("electricity_meter_no") or "").strip(),
-        FIELD_ELECTRICITY_ACCOUNT_NO: (extracted.get("electricity_account_no") or "").strip(),
-        FIELD_WHO_GETS_MONEY: provider,
-        FIELD_BILL_TYPE: (extracted.get("final_interim_bill") or "").strip(),
-        FIELD_PAYMENT_DUE_DATE: _to_iso_due_date(extracted.get("payment_due_date", "")),
-        FIELD_RECEIPT_NO: receipt_no,
-        FIELD_SERVICE_PERIOD: _format_service_period(
-            extracted.get("service_period_start", ""),
-            extracted.get("service_period_end", ""),
-        ),
-        FIELD_RF_PAYMENT_CODE: (extracted.get("rf_payment_code") or "").strip(),
-        FIELD_WHO_GETS_MONEY_ALT: provider,
     }
-    return {k: v for k, v in data.items() if k not in EXCLUDED_RESPONSE_FIELDS}
+
+    if previous_balance is not None:
+        data[FIELD_PREVIOUS_BALANCE_DUE] = previous_balance
+        data[FIELD_OVERDUE_PAYMENT] = "Yes" if _amount_is_positive(previous_balance) else "No"
+    if matching_number:
+        data[FIELD_MATCHING_NUMBER] = matching_number
+    meter_no = (extracted.get("electricity_meter_no") or "").strip()
+    if meter_no:
+        data[FIELD_ELECTRICITY_METER_NO] = meter_no
+    account_no = (extracted.get("electricity_account_no") or "").strip()
+    if account_no:
+        data[FIELD_ELECTRICITY_ACCOUNT_NO] = account_no
+    if provider:
+        data[FIELD_WHO_GETS_MONEY] = provider
+        data[FIELD_WHO_GETS_MONEY_ALT] = provider
+    bill_type = (extracted.get("final_interim_bill") or "").strip()
+    if bill_type:
+        data[FIELD_BILL_TYPE] = bill_type
+    if due_date:
+        data[FIELD_PAYMENT_DUE_DATE] = due_date
+    if receipt_no:
+        data[FIELD_RECEIPT_NO] = receipt_no
+    elif matching_number:
+        data[FIELD_RECEIPT_NO] = matching_number
+    if service_period:
+        data[FIELD_SERVICE_PERIOD] = service_period
+    rf_code = (extracted.get("rf_payment_code") or "").strip()
+    if rf_code:
+        data[FIELD_RF_PAYMENT_CODE] = rf_code
+
+    return _omit_unextracted_fields(data)
+
+
+def build_common_expenses_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
+    management_company = (extracted.get("management_company") or "").strip()
+    who_gets_money = (extracted.get("who_gets_money") or management_company).strip()
+    if management_company:
+        who_gets_money = management_company
+    expense_period = (extracted.get("expense_period") or "").strip()
+    previous_balance = _parse_amount_optional(extracted.get("previous_balance_due"))
+    tenant_share = _parse_amount_optional(extracted.get("tenant_share"))
+    landlord_share = _parse_amount_optional(extracted.get("landlord_share"))
+    total_amount = _parse_amount_optional(extracted.get("total_amount"))
+
+    data: dict[str, Any] = {
+        FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_COMMON_EXPENSES,
+        FIELD_CATEGORY: "Accrual",
+    }
+
+    if tenant_share is not None:
+        data[FIELD_TENANT_SHARE] = tenant_share
+    if landlord_share is not None:
+        data[FIELD_LANDLORD_SHARE] = landlord_share
+    if previous_balance is not None:
+        data[FIELD_PREVIOUS_BALANCE_DUE] = previous_balance
+        data[FIELD_OVERDUE_PAYMENT] = "Yes" if _amount_is_positive(previous_balance) else "No"
+    if management_company:
+        data[FIELD_MANAGEMENT_COMPANY] = management_company
+    if expense_period:
+        data[FIELD_EXPENSE_PERIOD] = expense_period
+        data[FIELD_SERVICE_PERIOD] = expense_period
+    if who_gets_money:
+        data[FIELD_WHO_GETS_MONEY_ALT] = who_gets_money
+    if total_amount is not None:
+        data[FIELD_TOTAL_AMOUNT] = total_amount
+
+    return _omit_unextracted_fields(data)
 
 
 def extract_cashflow_data_from_document(
@@ -278,13 +450,18 @@ def extract_cashflow_data_from_document(
 ) -> dict[str, Any]:
     normalized = normalize_document_type(document_type)
     if normalized is None:
+        supported = ", ".join(sorted({k.replace(" ", "_") for k in SUPPORTED_DOCUMENT_TYPES}))
         raise ValueError(
             f"Document type '{document_type}' is not supported. "
-            f"Supported types: {', '.join(sorted(set(SUPPORTED_DOCUMENT_TYPES.values())))}"
+            f"Supported types: {supported}"
         )
 
     if normalized == DOCUMENT_TYPE_ELECTRICITY_BILL:
         extracted = _extract_electricity_bill_with_gemini(file_bytes, filename)
         return build_electricity_bill_cashflow_data(extracted)
+
+    if normalized == DOCUMENT_TYPE_COMMON_EXPENSES:
+        extracted = _extract_common_expenses_with_gemini(file_bytes, filename)
+        return build_common_expenses_cashflow_data(extracted)
 
     raise ValueError(f"Document type '{document_type}' is not supported.")
