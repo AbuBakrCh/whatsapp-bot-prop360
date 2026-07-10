@@ -110,6 +110,12 @@ ELECTRICITY_BILL_EXTRACTION_SCHEMA = {
         "Look for equivalent labels such as Κωδικός Πληρωμής, Payment Code, RF Code, "
         "Payment Reference. Leave empty if not found."
     ),
+    "total_amount": (
+        "Total amount due now in euros — the current bill total payable. "
+        "Look for equivalent labels such as ΣΥΝΟΛΟ, ΠΛΗΡΩΤΕΟ, ΤΕΛΙΚΟ ΠΛΗΡΩΤΕΟ, "
+        "Total Due, Amount Due, Total Payable, Current Bill Total. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
 }
 
 COMMON_EXPENSES_EXTRACTION_SCHEMA = {
@@ -366,6 +372,7 @@ def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str,
     matching_number = (extracted.get("matching_number") or "").strip()
     receipt_no = (extracted.get("receipt_no") or "").strip()
     previous_balance = _parse_amount_optional(extracted.get("previous_balance_due"))
+    total_amount = _parse_amount_optional(extracted.get("total_amount"))
     service_period = _normalize_service_period(extracted.get("service_period", ""))
     due_date = _to_iso_due_date(extracted.get("payment_due_date", ""))
 
@@ -402,6 +409,8 @@ def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str,
     rf_code = (extracted.get("rf_payment_code") or "").strip()
     if rf_code:
         data[FIELD_RF_PAYMENT_CODE] = rf_code
+    if total_amount is not None:
+        data[FIELD_TOTAL_AMOUNT] = total_amount
 
     return _omit_unextracted_fields(data)
 
