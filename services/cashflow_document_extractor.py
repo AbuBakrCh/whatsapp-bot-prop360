@@ -9,14 +9,16 @@ import io
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import google.generativeai as genai
 from PIL import Image
 
 DOCUMENT_TYPE_ELECTRICITY_BILL = "Electricity Bill"
 DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
+DOCUMENT_TYPE_WATER_BILL = "Water Bill"
 
 SUPPORTED_DOCUMENT_TYPES = {
     "electricity_bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
@@ -25,6 +27,9 @@ SUPPORTED_DOCUMENT_TYPES = {
     "common_expenses": DOCUMENT_TYPE_COMMON_EXPENSES,
     "common expenses": DOCUMENT_TYPE_COMMON_EXPENSES,
     "common-expenses": DOCUMENT_TYPE_COMMON_EXPENSES,
+    "water_bill": DOCUMENT_TYPE_WATER_BILL,
+    "water bill": DOCUMENT_TYPE_WATER_BILL,
+    "water-bill": DOCUMENT_TYPE_WATER_BILL,
 }
 
 # Prop360 field IDs — electricity bill cashflow entries
@@ -50,6 +55,10 @@ FIELD_LANDLORD_SHARE = "field-1779680020866-s70nwdm41"
 FIELD_MANAGEMENT_COMPANY = "field-1779680027992-o2rv2qvc4"
 FIELD_EXPENSE_PERIOD = "field-1779680031528-6z5osildo"
 FIELD_TOTAL_AMOUNT = "field-1757605508754-uea4iadqd"
+
+# Prop360 field IDs — water bill cashflow entries
+FIELD_WATER_METER_NO = "field-1779825332418-7lwuwsbd7"
+FIELD_WATER_ACCOUNT_NO = "field-1779825343116-00klf8dff"
 
 # Fields the caller sets manually — never include in API response
 EXCLUDED_RESPONSE_FIELDS = frozenset({
@@ -155,6 +164,58 @@ COMMON_EXPENSES_EXTRACTION_SCHEMA = {
     ),
 }
 
+WATER_BILL_EXTRACTION_SCHEMA = {
+    "total_amount": (
+        "Total payable amount in euros. Look for equivalent labels such as "
+        "ΠΟΣΟ ΠΛΗΡΩΜΗΣ, ΠΛΗΡΩΤΕΟ, ΣΥΝΟΛΟ, Total Due, Amount Payable, Payment Amount. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "receipt_number": (
+        "Receipt / document / invoice number. Look for equivalent labels such as "
+        "ΑΡΙΘΜΟΣ ΠΑΡΑΣΤΑΤΙΚΟΥ, ΑΡ. ΠΑΡΑΣΤΑΤΙΚΟΥ, Document No, Invoice No, Receipt No. "
+        "Return digits and characters only, without spaces. Leave empty if not found."
+    ),
+    "payment_due_date": (
+        "Payment due date. Return as YYYY-MM-DD regardless of how it appears on the document."
+    ),
+    "water_meter_no": (
+        "Water supply registry / meter registry number — typically numeric, "
+        "often with a hyphen (e.g. 2344821-60). May appear under labels such as "
+        "ΑΡΙΘΜΟΣ ΜΗΤΡΩΟΥ, Registry No, Meter Registry, Supply Registry. "
+        "Do NOT use the alphanumeric account/contract code for this field. "
+        "Leave empty if not found."
+    ),
+    "water_account_no": (
+        "Water supply account / contract identifier — typically alphanumeric "
+        "(e.g. A22B89439). May appear under labels such as "
+        "ΑΡΙΘΜΟΣ ΜΕΤΡΗΤΗ, Account No, Supply Account, Customer Account, Contract No. "
+        "Do NOT use the numeric registry/meter number for this field. "
+        "Leave empty if not found."
+    ),
+    "service_period": (
+        "Consumption or billing service period exactly as shown on the document "
+        "(e.g. 11/10/2025-29/05/2026, 01/01/2026 - 31/01/2026). "
+        "Preserve original date format. Leave empty if not found."
+    ),
+    "who_gets_money": (
+        "Water utility company that receives payment — usually the company logo or name "
+        "on the bill header (e.g. water supplier / δημοτική επιχείρηση ύδρευσης). "
+        "Return the company name as printed. Leave empty if unclear."
+    ),
+    "previous_balance_due": (
+        "Previous outstanding/unpaid balance in euros from prior bills. "
+        "Look for equivalent labels such as Προηγούμενο Υπόλοιπο, Προηγ. Οφειλές, "
+        "Outstanding Balance, Previous Balance, Prior Amount Due. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "final_interim_bill": (
+        "Bill settlement type. Return 'Final' for settlement/clearance/final bills "
+        "(e.g. Εκκαθαριστικός, Final Bill). "
+        "Return 'Interim' for estimated/provisional bills (e.g. Ενδιάμεσος, Estimated). "
+        "Leave empty if unclear."
+    ),
+}
+
 _gen_model: genai.GenerativeModel | None = None
 
 
@@ -167,6 +228,8 @@ def normalize_document_type(document_type: str) -> str | None:
         return DOCUMENT_TYPE_ELECTRICITY_BILL
     if document_type.strip() == DOCUMENT_TYPE_COMMON_EXPENSES:
         return DOCUMENT_TYPE_COMMON_EXPENSES
+    if document_type.strip() == DOCUMENT_TYPE_WATER_BILL:
+        return DOCUMENT_TYPE_WATER_BILL
     return None
 
 
@@ -236,14 +299,59 @@ def _to_iso_due_date(value: str) -> str:
     if not parsed:
         return value.strip()
 
-    utc_midnight = datetime(
-        parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc
-    ) - timedelta(hours=2)
-    return utc_midnight.strftime("%Y-%m-%dT22:00:00.000Z")
+    local = datetime(
+        parsed.year, parsed.month, parsed.day, tzinfo=ZoneInfo("Europe/Athens")
+    )
+    utc = local.astimezone(timezone.utc)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _normalize_receipt_number(value: str) -> str:
+    return re.sub(r"\s+", "", value.strip())
+
+
+def _normalize_water_service_period(value: str) -> str:
+    return value.strip()
+
+
+def _normalize_bill_type(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    lower = text.lower()
+    if lower in ("final", "εκκαθαριστικός", "settlement", "clearance"):
+        return "Final"
+    if lower in ("interim", "ενδιάμεσος", "estimated", "provisional"):
+        return "Interim"
+    if text in ("Final", "Interim"):
+        return text
+    return ""
 
 
 def _normalize_provider(value: str) -> str:
     return value.strip()
+
+
+def _to_latin_transliteration(value: str) -> str:
+    """Convert Greek company names to Latin characters (e.g. ΕΥΔΑΠ -> EYDAP)."""
+    if not value:
+        return ""
+
+    greek_map = {
+        "Α": "A", "Β": "B", "Γ": "G", "Δ": "D", "Ε": "E", "Ζ": "Z", "Η": "I", "Θ": "TH",
+        "Ι": "I", "Κ": "K", "Λ": "L", "Μ": "M", "Ν": "N", "Ξ": "X", "Ο": "O", "Π": "P",
+        "Ρ": "R", "Σ": "S", "Τ": "T", "Υ": "Y", "Φ": "F", "Χ": "CH", "Ψ": "PS", "Ω": "O",
+        "α": "a", "β": "b", "γ": "g", "δ": "d", "ε": "e", "ζ": "z", "η": "i", "θ": "th",
+        "ι": "i", "κ": "k", "λ": "l", "μ": "m", "ν": "n", "ξ": "x", "ο": "o", "π": "p",
+        "ρ": "r", "σ": "s", "ς": "s", "τ": "t", "υ": "y", "φ": "f", "χ": "ch", "ψ": "ps",
+        "ω": "o",
+    }
+
+    return "".join(greek_map.get(char, char) for char in value.strip())
+
+
+def _normalize_payee_name(value: str) -> str:
+    return _to_latin_transliteration(_normalize_provider(value))
 
 
 def _normalize_service_period(value: str) -> str:
@@ -367,6 +475,28 @@ def _extract_common_expenses_with_gemini(
     )
 
 
+def _extract_water_bill_with_gemini(
+    file_bytes: bytes, filename: str | None = None
+) -> dict[str, Any]:
+    return _extract_with_gemini(
+        file_bytes,
+        filename=filename,
+        schema=WATER_BILL_EXTRACTION_SCHEMA,
+        document_description=(
+            "water utility bills and invoices from any water provider, "
+            "in any layout, language (Greek or English), or format"
+        ),
+        extra_rules="""
+- Templates vary widely across providers — extract by meaning, not by layout or coordinates.
+- Do NOT assume a specific company, logo, or invoice template.
+- Recognize equivalent terminology rather than exact labels.
+- payment_due_date must be YYYY-MM-DD when confidently extracted.
+- receipt_number must have all spaces removed.
+- water_meter_no is the numeric registry number; water_account_no is the separate alphanumeric account/contract code.
+""",
+    )
+
+
 def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     provider = _normalize_provider(extracted.get("who_gets_money", ""))
     matching_number = (extracted.get("matching_number") or "").strip()
@@ -379,6 +509,7 @@ def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str,
     data: dict[str, Any] = {
         FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_ELECTRICITY_BILL,
         FIELD_CATEGORY: "Accrual",
+        FIELD_DEBIT_CREDIT: "Debit",
     }
 
     if previous_balance is not None:
@@ -394,7 +525,7 @@ def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str,
         data[FIELD_ELECTRICITY_ACCOUNT_NO] = account_no
     if provider:
         data[FIELD_WHO_GETS_MONEY] = provider
-        data[FIELD_WHO_GETS_MONEY_ALT] = provider
+        data[FIELD_WHO_GETS_MONEY_ALT] = _normalize_payee_name(provider)
     bill_type = (extracted.get("final_interim_bill") or "").strip()
     if bill_type:
         data[FIELD_BILL_TYPE] = bill_type
@@ -429,6 +560,7 @@ def build_common_expenses_cashflow_data(extracted: dict[str, Any]) -> dict[str, 
     data: dict[str, Any] = {
         FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_COMMON_EXPENSES,
         FIELD_CATEGORY: "Accrual",
+        FIELD_DEBIT_CREDIT: "Debit",
     }
 
     if tenant_share is not None:
@@ -444,9 +576,49 @@ def build_common_expenses_cashflow_data(extracted: dict[str, Any]) -> dict[str, 
         data[FIELD_EXPENSE_PERIOD] = expense_period
         data[FIELD_SERVICE_PERIOD] = expense_period
     if who_gets_money:
-        data[FIELD_WHO_GETS_MONEY_ALT] = who_gets_money
+        data[FIELD_WHO_GETS_MONEY_ALT] = _normalize_payee_name(who_gets_money)
     if total_amount is not None:
         data[FIELD_TOTAL_AMOUNT] = total_amount
+
+    return _omit_unextracted_fields(data)
+
+
+def build_water_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
+    total_amount = _parse_amount_optional(extracted.get("total_amount"))
+    receipt_number = _normalize_receipt_number(extracted.get("receipt_number", ""))
+    due_date = _to_iso_due_date(extracted.get("payment_due_date", ""))
+    meter_no = (extracted.get("water_meter_no") or "").strip()
+    account_no = (extracted.get("water_account_no") or "").strip()
+    service_period = _normalize_water_service_period(extracted.get("service_period", ""))
+    who_gets_money = _normalize_provider(extracted.get("who_gets_money", ""))
+    previous_balance = _parse_amount_optional(extracted.get("previous_balance_due"))
+    bill_type = _normalize_bill_type(extracted.get("final_interim_bill", ""))
+
+    data: dict[str, Any] = {
+        FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_WATER_BILL,
+        FIELD_CATEGORY: "Accrual",
+        FIELD_DEBIT_CREDIT: "Debit",
+    }
+
+    if total_amount is not None:
+        data[FIELD_TOTAL_AMOUNT] = total_amount
+    if receipt_number:
+        data[FIELD_MATCHING_NUMBER] = receipt_number
+    if due_date:
+        data[FIELD_PAYMENT_DUE_DATE] = due_date
+    if meter_no:
+        data[FIELD_WATER_METER_NO] = meter_no
+    if account_no:
+        data[FIELD_WATER_ACCOUNT_NO] = account_no
+    if service_period:
+        data[FIELD_SERVICE_PERIOD] = service_period
+    if who_gets_money:
+        data[FIELD_WHO_GETS_MONEY_ALT] = _normalize_payee_name(who_gets_money)
+    if previous_balance is not None:
+        data[FIELD_PREVIOUS_BALANCE_DUE] = previous_balance
+        data[FIELD_OVERDUE_PAYMENT] = "Yes" if _amount_is_positive(previous_balance) else "No"
+    if bill_type:
+        data[FIELD_BILL_TYPE] = bill_type
 
     return _omit_unextracted_fields(data)
 
@@ -472,5 +644,9 @@ def extract_cashflow_data_from_document(
     if normalized == DOCUMENT_TYPE_COMMON_EXPENSES:
         extracted = _extract_common_expenses_with_gemini(file_bytes, filename)
         return build_common_expenses_cashflow_data(extracted)
+
+    if normalized == DOCUMENT_TYPE_WATER_BILL:
+        extracted = _extract_water_bill_with_gemini(file_bytes, filename)
+        return build_water_bill_cashflow_data(extracted)
 
     raise ValueError(f"Document type '{document_type}' is not supported.")
