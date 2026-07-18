@@ -29,10 +29,10 @@ export default function AddingProperties() {
 
     try {
       const payload = {
-        sourceMerchantEmail,
+        sourceMerchantEmail: sourceMerchantEmail.trim().toLowerCase(),
         targetMerchantEmails: targetMerchantEmails
           .split(",")
-          .map((email) => email.trim())
+          .map((email) => email.trim().toLowerCase())
           .filter(Boolean),
         filters: {
           city,
