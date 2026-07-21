@@ -19,6 +19,7 @@ from PIL import Image
 DOCUMENT_TYPE_ELECTRICITY_BILL = "Electricity Bill"
 DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
 DOCUMENT_TYPE_WATER_BILL = "Water Bill"
+DOCUMENT_TYPE_BANK_RECEIPT = "Bank Transaction"
 
 SUPPORTED_DOCUMENT_TYPES = {
     "electricity_bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
@@ -30,6 +31,11 @@ SUPPORTED_DOCUMENT_TYPES = {
     "water_bill": DOCUMENT_TYPE_WATER_BILL,
     "water bill": DOCUMENT_TYPE_WATER_BILL,
     "water-bill": DOCUMENT_TYPE_WATER_BILL,
+    "bank_receipt": DOCUMENT_TYPE_BANK_RECEIPT,
+    "bank receipt": DOCUMENT_TYPE_BANK_RECEIPT,
+    "bank-receipt": DOCUMENT_TYPE_BANK_RECEIPT,
+    "bank_transaction": DOCUMENT_TYPE_BANK_RECEIPT,
+    "bank transaction": DOCUMENT_TYPE_BANK_RECEIPT,
 }
 
 # Prop360 field IDs — electricity bill cashflow entries
@@ -59,6 +65,21 @@ FIELD_TOTAL_AMOUNT = "field-1757605508754-uea4iadqd"
 # Prop360 field IDs — water bill cashflow entries
 FIELD_WATER_METER_NO = "field-1779825332418-7lwuwsbd7"
 FIELD_WATER_ACCOUNT_NO = "field-1779825343116-00klf8dff"
+
+# Prop360 field IDs — bank receipt cashflow entries
+FIELD_TRX_REF_NO = "field-1757604618017-q2mtvmiqp"
+FIELD_TRX_DATE = "field-1757605069078-p5plna7qr"
+FIELD_TRX_VALUE_DATE = "field-1757605079803-icw8ykc19"
+FIELD_TRX_BANK = "field-1757605194423-ofbqnqfso"
+FIELD_INVEST_GREECE_NOTES = "field-1757605632930-2hfg96qgr"
+FIELD_MONTH = "field-1759392145178-qbx06ungl"
+FIELD_YEAR = "field-1759392151218-bmx5iidn6"
+FIELD_PAYMENT_DIRECTION = "field-1783088283028-kwkardhwn"
+
+MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
 
 # Fields the caller sets manually — never include in API response
 EXCLUDED_RESPONSE_FIELDS = frozenset({
@@ -216,6 +237,43 @@ WATER_BILL_EXTRACTION_SCHEMA = {
     ),
 }
 
+BANK_RECEIPT_EXTRACTION_SCHEMA = {
+    "trx_ref_no": (
+        "Unique transaction / reference / receipt number. Look for labels such as "
+        "Unique Transaction Number, Transaction Reference, Reference No, Αριθμός Συναλλαγής. "
+        "Preserve the value as printed (including slash separators). Leave empty if not found."
+    ),
+    "trx_date": (
+        "Transfer / transaction date. Return as YYYY-MM-DD only (ignore time of day)."
+    ),
+    "trx_value_date": (
+        "Value date of the transfer. Return as YYYY-MM-DD only. "
+        "If only one date is present, use the same date as trx_date."
+    ),
+    "trx_bank": (
+        "Bank name issuing the receipt (logo or header, e.g. Optima bank, Eurobank, Alpha Bank). "
+        "Return the bank name in title case Latin characters when possible."
+    ),
+    "total_amount": (
+        "Transfer amount in euros. Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "transaction_type": (
+        "Transaction type / title of the transfer "
+        "(e.g. Transfer to third party within the bank, SEPA transfer, Instant payment). "
+        "Leave empty if not found."
+    ),
+    "payment_reference": (
+        "Payment details / payment reference / remittance information shown on the receipt "
+        "(e.g. Athinon66 Patra, for mert KILIC). Leave empty if not found."
+    ),
+    "beneficiary_name": (
+        "Beneficiary / payee name (who receives the money). Leave empty if not found."
+    ),
+    "beneficiary_account": (
+        "Beneficiary account number or IBAN (To account). Leave empty if not found."
+    ),
+}
+
 _gen_model: genai.GenerativeModel | None = None
 
 
@@ -230,6 +288,8 @@ def normalize_document_type(document_type: str) -> str | None:
         return DOCUMENT_TYPE_COMMON_EXPENSES
     if document_type.strip() == DOCUMENT_TYPE_WATER_BILL:
         return DOCUMENT_TYPE_WATER_BILL
+    if document_type.strip() == DOCUMENT_TYPE_BANK_RECEIPT:
+        return DOCUMENT_TYPE_BANK_RECEIPT
     return None
 
 
@@ -289,10 +349,14 @@ def _parse_amount(value: Any) -> str:
 def _to_iso_due_date(value: str) -> str:
     if not value:
         return ""
+    text = value.strip()
+    # Drop time portion if present (e.g. "10/07/2026 14:53" or "10/07/2026 (Now)")
+    text = re.split(r"\s+", text, maxsplit=1)[0]
+    text = text.strip("()")
     parsed: datetime | None = None
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
-            parsed = datetime.strptime(value.strip(), fmt)
+            parsed = datetime.strptime(text, fmt)
             break
         except ValueError:
             continue
@@ -304,6 +368,55 @@ def _to_iso_due_date(value: str) -> str:
     )
     utc = local.astimezone(timezone.utc)
     return utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _parse_amount_two_decimals(value: Any) -> str | None:
+    parsed = _parse_amount(value)
+    if not parsed:
+        return None
+    try:
+        return f"{float(parsed):.2f}"
+    except ValueError:
+        return parsed
+
+
+def _month_year_from_iso(iso_date: str) -> tuple[str, str]:
+    if not iso_date:
+        return "", ""
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        local = dt.astimezone(ZoneInfo("Europe/Athens"))
+        return MONTH_NAMES[local.month - 1], str(local.year)
+    except ValueError:
+        return "", ""
+
+
+def _format_bank_name(value: str) -> str:
+    text = _normalize_payee_name(value).strip()
+    if not text:
+        return ""
+    return " ".join(part.capitalize() if part.isupper() or part.islower() else part for part in text.split())
+
+
+def _format_beneficiary_who_gets_money(name: str, account: str) -> str:
+    name = _normalize_payee_name(name).strip()
+    account = account.strip()
+    if name and account:
+        return f"{name} (Account No: {account})"
+    if name:
+        return name
+    if account:
+        return f"(Account No: {account})"
+    return ""
+
+
+def _format_invest_greece_notes(transaction_type: str, payment_reference: str) -> str:
+    parts: list[str] = []
+    if transaction_type.strip():
+        parts.append(f"Transaction type: {transaction_type.strip()}")
+    if payment_reference.strip():
+        parts.append(f"Payment reference: {payment_reference.strip()}")
+    return " | ".join(parts)
 
 
 def _normalize_receipt_number(value: str) -> str:
@@ -497,6 +610,27 @@ def _extract_water_bill_with_gemini(
     )
 
 
+def _extract_bank_receipt_with_gemini(
+    file_bytes: bytes, filename: str | None = None
+) -> dict[str, Any]:
+    return _extract_with_gemini(
+        file_bytes,
+        filename=filename,
+        schema=BANK_RECEIPT_EXTRACTION_SCHEMA,
+        document_description=(
+            "bank transfer receipts and payment confirmations from any bank, "
+            "in any layout, language (Greek or English), or format"
+        ),
+        extra_rules="""
+- Templates vary widely across banks — extract by meaning, not by layout or coordinates.
+- Do NOT assume a specific bank or receipt template.
+- trx_date and trx_value_date must be YYYY-MM-DD (date only, no time).
+- transaction_type is the transfer title/type; payment_reference is the remittance/payment details text.
+- beneficiary_name and beneficiary_account are the payee receiving the funds (not the depositor).
+""",
+    )
+
+
 def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     provider = _normalize_provider(extracted.get("who_gets_money", ""))
     matching_number = (extracted.get("matching_number") or "").strip()
@@ -623,6 +757,50 @@ def build_water_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     return _omit_unextracted_fields(data)
 
 
+def build_bank_receipt_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
+    trx_ref = (extracted.get("trx_ref_no") or "").strip()
+    trx_date = _to_iso_due_date(extracted.get("trx_date", ""))
+    trx_value_date = _to_iso_due_date(extracted.get("trx_value_date", "")) or trx_date
+    trx_bank = _format_bank_name(extracted.get("trx_bank", ""))
+    total_amount = _parse_amount_two_decimals(extracted.get("total_amount"))
+    notes = _format_invest_greece_notes(
+        extracted.get("transaction_type", ""),
+        extracted.get("payment_reference", ""),
+    )
+    who_gets_money = _format_beneficiary_who_gets_money(
+        extracted.get("beneficiary_name", ""),
+        extracted.get("beneficiary_account", ""),
+    )
+    month, year = _month_year_from_iso(trx_date or trx_value_date)
+
+    data: dict[str, Any] = {
+        FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_BANK_RECEIPT,
+        FIELD_CATEGORY: "Payment",
+        FIELD_PAYMENT_DIRECTION: "Incoming Payment",
+    }
+
+    if trx_ref:
+        data[FIELD_TRX_REF_NO] = trx_ref
+    if trx_date:
+        data[FIELD_TRX_DATE] = trx_date
+    if trx_value_date:
+        data[FIELD_TRX_VALUE_DATE] = trx_value_date
+    if trx_bank:
+        data[FIELD_TRX_BANK] = trx_bank
+    if total_amount is not None:
+        data[FIELD_TOTAL_AMOUNT] = total_amount
+    if notes:
+        data[FIELD_INVEST_GREECE_NOTES] = notes
+    if month:
+        data[FIELD_MONTH] = month
+    if year:
+        data[FIELD_YEAR] = year
+    if who_gets_money:
+        data[FIELD_WHO_GETS_MONEY_ALT] = who_gets_money
+
+    return _omit_unextracted_fields(data)
+
+
 def extract_cashflow_data_from_document(
     file_bytes: bytes,
     *,
@@ -648,5 +826,9 @@ def extract_cashflow_data_from_document(
     if normalized == DOCUMENT_TYPE_WATER_BILL:
         extracted = _extract_water_bill_with_gemini(file_bytes, filename)
         return build_water_bill_cashflow_data(extracted)
+
+    if normalized == DOCUMENT_TYPE_BANK_RECEIPT:
+        extracted = _extract_bank_receipt_with_gemini(file_bytes, filename)
+        return build_bank_receipt_cashflow_data(extracted)
 
     raise ValueError(f"Document type '{document_type}' is not supported.")
