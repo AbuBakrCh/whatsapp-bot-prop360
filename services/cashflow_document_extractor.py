@@ -20,6 +20,7 @@ DOCUMENT_TYPE_ELECTRICITY_BILL = "Electricity Bill"
 DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
 DOCUMENT_TYPE_WATER_BILL = "Water Bill"
 DOCUMENT_TYPE_BANK_RECEIPT = "Bank Transaction"
+DOCUMENT_TYPE_INVOICE = "Invoice"
 
 SUPPORTED_DOCUMENT_TYPES = {
     "electricity_bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
@@ -36,6 +37,7 @@ SUPPORTED_DOCUMENT_TYPES = {
     "bank-receipt": DOCUMENT_TYPE_BANK_RECEIPT,
     "bank_transaction": DOCUMENT_TYPE_BANK_RECEIPT,
     "bank transaction": DOCUMENT_TYPE_BANK_RECEIPT,
+    "invoice": DOCUMENT_TYPE_INVOICE,
 }
 
 # Prop360 field IDs — electricity bill cashflow entries
@@ -75,6 +77,30 @@ FIELD_INVEST_GREECE_NOTES = "field-1757605632930-2hfg96qgr"
 FIELD_MONTH = "field-1759392145178-qbx06ungl"
 FIELD_YEAR = "field-1759392151218-bmx5iidn6"
 FIELD_PAYMENT_DIRECTION = "field-1783088283028-kwkardhwn"
+
+# Prop360 field IDs — invoice cashflow entries
+FIELD_TRX_PAYER = "field-1758478123620-9ztb0q9sq"
+FIELD_COMPANY_ADDRESS = "field-1780046462769-14ll0br14"
+FIELD_TAX_OFFICE = "field-1780046437513-bwmq7gzvl"
+FIELD_CUST_INFO_BILL_TO = "field-1780046466675-0bbram33w"
+FIELD_SERVICE_DESCRIPTION = "field-1780046470280-nqlyhq3qo"
+FIELD_BANK_IBAN_INFO = "field-1780047071203-1ww7zfwdi"
+FIELD_INVOICE_ISSUER = "field-1763025141515-wp3fyie36"
+FIELD_INVOICE_ISSUE_DATE = "field-1763025943928-96pgpyzij"
+FIELD_INVOICE_RECIPIENT = "field-1763025146443-1t1qiizo0"
+FIELD_INVOICE_SOURCE = "field-1783317314494-7wrh0uzes"
+FIELD_INVOICE_ISSUER_TAX_ID = "field-1763025149106-5rohv9ksd"
+FIELD_INVOICE_RECIPIENT_TAX_ID = "field-1763025938971-3vmgk1kn5"
+FIELD_INVOICE_ISSUED_BY = "field-1780140384161-8yovnepai"
+FIELD_INVOICE_NUMBER = "field-1763025941333-lfsl04kdf"
+FIELD_AMOUNT_EXCLUDING_VAT = "field-1763025946163-pwe00nucs"
+FIELD_VAT_RATIO = "field-1763026912693-45fgrq8y4"
+FIELD_VAT_AMOUNT = "field-1763026916002-uhnzp35vu"
+FIELD_TRX_PAYMENT_METHOD = "field-1758478644281-ct8pck6lk"
+
+TRX_PAYER_VALUES = frozenset({"Customer", "Invest Greece"})
+INVOICE_SOURCE_VALUES = frozenset({"Solomon Invoice", "Third Party Invoice"})
+TRX_PAYMENT_METHOD_VALUES = frozenset({"In Person", "Bank"})
 
 MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",
@@ -274,6 +300,84 @@ BANK_RECEIPT_EXTRACTION_SCHEMA = {
     ),
 }
 
+INVOICE_EXTRACTION_SCHEMA = {
+    "trx_payer": (
+        "Who is the payer of this invoice transaction. Must be exactly one of: "
+        "'Customer' or 'Invest Greece'. "
+        "Use 'Invest Greece' when Invest Greece / Solomon United Realtors / related "
+        "company is paying or is the bill-to/customer party on the invoice. "
+        "Use 'Customer' when an external client/tenant/customer is the payer. "
+        "Leave empty if unclear."
+    ),
+    "company_address": (
+        "Issuer company address as printed on the invoice. Leave empty if not found."
+    ),
+    "tax_office": (
+        "Tax office (Δ.Ο.Υ. / DOY / Tax Office) of the issuer. Leave empty if not found."
+    ),
+    "cust_info_bill_to": (
+        "Customer / Bill To party details (name and address if present). Leave empty if not found."
+    ),
+    "service_description": (
+        "Description of goods/services on the invoice line items. Leave empty if not found."
+    ),
+    "service_period": (
+        "Service / billing period if shown (e.g. June 2026, 01/06/2026-30/06/2026). "
+        "Leave empty if not found."
+    ),
+    "bank_iban_info": (
+        "Bank name and/or IBAN payment details for settling the invoice. Leave empty if not found."
+    ),
+    "invoice_issuer": (
+        "Company or person issuing the invoice (seller / vendor). Leave empty if not found."
+    ),
+    "invoice_issue_date": (
+        "Invoice issue date. Return as YYYY-MM-DD."
+    ),
+    "invoice_recipient": (
+        "Invoice recipient / buyer / billed party name. Leave empty if not found."
+    ),
+    "invoice_source": (
+        "Must be exactly one of: 'Solomon Invoice' or 'Third Party Invoice'. "
+        "Use 'Solomon Invoice' when issued by Solomon / Invest Greece / Solomon United Realtors. "
+        "Use 'Third Party Invoice' when issued by any other company. Leave empty if unclear."
+    ),
+    "invoice_issuer_tax_id": (
+        "Issuer tax ID / Α.Φ.Μ. / VAT number. Leave empty if not found."
+    ),
+    "invoice_recipient_tax_id": (
+        "Recipient tax ID / Α.Φ.Μ. / VAT number. Leave empty if not found."
+    ),
+    "invoice_issued_by": (
+        "Person who issued/signed/prepared the invoice if shown. Leave empty if not found."
+    ),
+    "invoice_number": (
+        "Invoice number / document number. Leave empty if not found."
+    ),
+    "amount_excluding_vat": (
+        "Net amount excluding VAT. Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "vat_ratio": (
+        "VAT percentage rate as a number without % sign (e.g. 24, 13, 0). Leave empty if not found."
+    ),
+    "vat_amount": (
+        "VAT amount in euros. Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "trx_payment_method": (
+        "Payment method. Must be exactly one of: 'In Person' or 'Bank'. "
+        "Use 'Bank' for bank transfer / IBAN / deposit. Use 'In Person' for cash / in-person payment. "
+        "Leave empty if unclear."
+    ),
+    "total_amount": (
+        "Total amount including VAT / grand total payable. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "invest_greece_notes": (
+        "Any relevant notes, remarks, or payment references from the invoice. "
+        "Leave empty if none."
+    ),
+}
+
 _gen_model: genai.GenerativeModel | None = None
 
 
@@ -290,6 +394,8 @@ def normalize_document_type(document_type: str) -> str | None:
         return DOCUMENT_TYPE_WATER_BILL
     if document_type.strip() == DOCUMENT_TYPE_BANK_RECEIPT:
         return DOCUMENT_TYPE_BANK_RECEIPT
+    if document_type.strip() == DOCUMENT_TYPE_INVOICE:
+        return DOCUMENT_TYPE_INVOICE
     return None
 
 
@@ -439,6 +545,49 @@ def _normalize_bill_type(value: str) -> str:
     if text in ("Final", "Interim"):
         return text
     return ""
+
+
+def _normalize_enum(value: str, allowed: frozenset[str]) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    for option in allowed:
+        if text.lower() == option.lower():
+            return option
+    return ""
+
+
+def _normalize_trx_payer(value: str) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    if "invest" in text or "solomon" in text:
+        return "Invest Greece"
+    if "customer" in text or "client" in text or "πελάτ" in text:
+        return "Customer"
+    return _normalize_enum(value, TRX_PAYER_VALUES)
+
+
+def _normalize_invoice_source(value: str) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    if "solomon" in text or "invest greece" in text:
+        return "Solomon Invoice"
+    if "third" in text or "3rd" in text or "external" in text:
+        return "Third Party Invoice"
+    return _normalize_enum(value, INVOICE_SOURCE_VALUES)
+
+
+def _normalize_trx_payment_method(value: str) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    if any(token in text for token in ("bank", "iban", "transfer", "έμβασ", "κατάθεσ")):
+        return "Bank"
+    if any(token in text for token in ("person", "cash", "μετρητ", "ταμείο", "in person")):
+        return "In Person"
+    return _normalize_enum(value, TRX_PAYMENT_METHOD_VALUES)
 
 
 def _normalize_provider(value: str) -> str:
@@ -631,6 +780,30 @@ def _extract_bank_receipt_with_gemini(
     )
 
 
+def _extract_invoice_with_gemini(
+    file_bytes: bytes, filename: str | None = None
+) -> dict[str, Any]:
+    return _extract_with_gemini(
+        file_bytes,
+        filename=filename,
+        schema=INVOICE_EXTRACTION_SCHEMA,
+        document_description=(
+            "commercial invoices (τιμολόγια) from any issuer, "
+            "in any layout, language (Greek or English), or format"
+        ),
+        extra_rules="""
+- Templates vary widely — extract by meaning, not by layout or coordinates.
+- If the file contains multiple invoices, extract ONLY the first invoice.
+- Do NOT assume a specific company or template.
+- trx_payer must be exactly "Customer" or "Invest Greece" (or empty).
+- invoice_source must be exactly "Solomon Invoice" or "Third Party Invoice" (or empty).
+- trx_payment_method must be exactly "In Person" or "Bank" (or empty).
+- invoice_issue_date must be YYYY-MM-DD when confidently extracted.
+- Numeric amounts use dot as decimal separator.
+""",
+    )
+
+
 def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     provider = _normalize_provider(extracted.get("who_gets_money", ""))
     matching_number = (extracted.get("matching_number") or "").strip()
@@ -801,6 +974,79 @@ def build_bank_receipt_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any
     return _omit_unextracted_fields(data)
 
 
+def build_invoice_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
+    trx_payer = _normalize_trx_payer(extracted.get("trx_payer", ""))
+    invoice_source = _normalize_invoice_source(extracted.get("invoice_source", ""))
+    payment_method = _normalize_trx_payment_method(extracted.get("trx_payment_method", ""))
+    issue_date = _to_iso_due_date(extracted.get("invoice_issue_date", ""))
+    amount_ex_vat = _parse_amount_optional(extracted.get("amount_excluding_vat"))
+    vat_amount = _parse_amount_optional(extracted.get("vat_amount"))
+    total_amount = _parse_amount_optional(extracted.get("total_amount"))
+    vat_ratio = _parse_amount_optional(extracted.get("vat_ratio"))
+
+    data: dict[str, Any] = {
+        FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_INVOICE,
+    }
+
+    if trx_payer:
+        data[FIELD_TRX_PAYER] = trx_payer
+    company_address = (extracted.get("company_address") or "").strip()
+    if company_address:
+        data[FIELD_COMPANY_ADDRESS] = company_address
+    tax_office = (extracted.get("tax_office") or "").strip()
+    if tax_office:
+        data[FIELD_TAX_OFFICE] = tax_office
+    bill_to = (extracted.get("cust_info_bill_to") or "").strip()
+    if bill_to:
+        data[FIELD_CUST_INFO_BILL_TO] = bill_to
+    service_description = (extracted.get("service_description") or "").strip()
+    if service_description:
+        data[FIELD_SERVICE_DESCRIPTION] = service_description
+    service_period = (extracted.get("service_period") or "").strip()
+    if service_period:
+        data[FIELD_SERVICE_PERIOD] = service_period
+    bank_iban = (extracted.get("bank_iban_info") or "").strip()
+    if bank_iban:
+        data[FIELD_BANK_IBAN_INFO] = bank_iban
+    issuer = (extracted.get("invoice_issuer") or "").strip()
+    if issuer:
+        data[FIELD_INVOICE_ISSUER] = issuer
+    if issue_date:
+        data[FIELD_INVOICE_ISSUE_DATE] = issue_date
+    recipient = (extracted.get("invoice_recipient") or "").strip()
+    if recipient:
+        data[FIELD_INVOICE_RECIPIENT] = recipient
+    if invoice_source:
+        data[FIELD_INVOICE_SOURCE] = invoice_source
+    issuer_tax_id = (extracted.get("invoice_issuer_tax_id") or "").strip()
+    if issuer_tax_id:
+        data[FIELD_INVOICE_ISSUER_TAX_ID] = issuer_tax_id
+    recipient_tax_id = (extracted.get("invoice_recipient_tax_id") or "").strip()
+    if recipient_tax_id:
+        data[FIELD_INVOICE_RECIPIENT_TAX_ID] = recipient_tax_id
+    issued_by = (extracted.get("invoice_issued_by") or "").strip()
+    if issued_by:
+        data[FIELD_INVOICE_ISSUED_BY] = issued_by
+    invoice_number = (extracted.get("invoice_number") or "").strip()
+    if invoice_number:
+        data[FIELD_INVOICE_NUMBER] = invoice_number
+    if amount_ex_vat is not None:
+        data[FIELD_AMOUNT_EXCLUDING_VAT] = amount_ex_vat
+    if vat_ratio is not None:
+        data[FIELD_VAT_RATIO] = vat_ratio
+    if vat_amount is not None:
+        data[FIELD_VAT_AMOUNT] = vat_amount
+    if payment_method:
+        data[FIELD_TRX_PAYMENT_METHOD] = payment_method
+    if total_amount is not None:
+        data[FIELD_TOTAL_AMOUNT] = total_amount
+    notes = (extracted.get("invest_greece_notes") or "").strip()
+    if notes:
+        data[FIELD_INVEST_GREECE_NOTES] = notes
+
+    return _omit_unextracted_fields(data)
+
+
 def extract_cashflow_data_from_document(
     file_bytes: bytes,
     *,
@@ -830,5 +1076,9 @@ def extract_cashflow_data_from_document(
     if normalized == DOCUMENT_TYPE_BANK_RECEIPT:
         extracted = _extract_bank_receipt_with_gemini(file_bytes, filename)
         return build_bank_receipt_cashflow_data(extracted)
+
+    if normalized == DOCUMENT_TYPE_INVOICE:
+        extracted = _extract_invoice_with_gemini(file_bytes, filename)
+        return build_invoice_cashflow_data(extracted)
 
     raise ValueError(f"Document type '{document_type}' is not supported.")

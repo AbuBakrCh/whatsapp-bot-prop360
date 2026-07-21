@@ -1271,7 +1271,7 @@ async def extract_cashflow_from_document(
 ):
     """
     Extract Prop360 cashflow `data` fields from a bill document (PDF/image).
-    Currently supports: electricity_bill, common_expenses, water_bill, bank_receipt
+    Currently supports: electricity_bill, common_expenses, water_bill, bank_receipt, invoice
     """
     try:
         file_bytes = await file.read()
