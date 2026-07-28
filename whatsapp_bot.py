@@ -51,6 +51,7 @@ from services.ledger_report import (
     build_ledger_excel,
     fetch_ledger_report,
 )
+from services.accrual_payment_matching import fetch_accrual_payment_matches
 from services.cashflow_document_extractor import extract_cashflow_data_from_document
 from share_property_job import start_property_match_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
@@ -2472,6 +2473,40 @@ async def get_cashflow_ledger(
             activity_page_size=activityPageSize,
         )
         return ledger
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.get("/cashflows/accrual-payment-matches")
+async def get_accrual_payment_matches(
+    accrualStartDate: str = Query(
+        ..., description="Greece calendar start date for accruals YYYY-MM-DD"
+    ),
+    accrualEndDate: str = Query(
+        ..., description="Greece calendar end date for accruals YYYY-MM-DD"
+    ),
+    paymentStartDate: str = Query(
+        ..., description="Greece calendar start date for payments YYYY-MM-DD"
+    ),
+    paymentEndDate: str = Query(
+        ..., description="Greece calendar end date for payments YYYY-MM-DD"
+    ),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+):
+    try:
+        return await fetch_accrual_payment_matches(
+            prop_db,
+            accrualStartDate,
+            accrualEndDate,
+            paymentStartDate,
+            paymentEndDate,
+            page=page,
+            page_size=pageSize,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

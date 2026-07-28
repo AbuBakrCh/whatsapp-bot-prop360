@@ -286,6 +286,32 @@ export async function exportCashflowLedger({ groupType = "property", groupId } =
   }
 }
 
+export async function getAccrualPaymentMatches({
+  accrualStartDate,
+  accrualEndDate,
+  paymentStartDate,
+  paymentEndDate,
+  page = 1,
+  pageSize = 20,
+} = {}) {
+  try {
+    const response = await axios.get(`${BASE}/cashflows/accrual-payment-matches`, {
+      params: {
+        accrualStartDate,
+        accrualEndDate,
+        paymentStartDate,
+        paymentEndDate,
+        page,
+        pageSize,
+      },
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error fetching accrual-payment matches:", err);
+    throw err;
+  }
+}
+
 export async function mergeContacts(payload) {
   try {
     const response = await axios.post(`${BASE}/contacts/merge`, payload);

@@ -7,6 +7,7 @@ import Utilities from "./pages/Utilities";
 import ImportantLinks from './pages/ImportantLinks'
 import Spitogatos from "./pages/Spitogatos";
 import Ledger from "./pages/Ledger";
+import AccrualPaymentMatching from "./pages/AccrualPaymentMatching";
 import Groups from "./pages/Groups";
 import "./styles.css";
 
@@ -19,6 +20,7 @@ createRoot(document.getElementById("root")).render(
       <Route path="/important-links" element={<ImportantLinks />} />
       <Route path="/spitogatos" element={<Spitogatos />} />
       <Route path="/ledger" element={<Ledger />} />
+      <Route path="/cashflow-matching" element={<AccrualPaymentMatching />} />
       <Route path="/groups" element={<Groups />} />
     </Routes>
   </BrowserRouter>

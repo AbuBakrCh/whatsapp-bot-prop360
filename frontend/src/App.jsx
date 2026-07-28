@@ -7,6 +7,11 @@ const sections = [
   { to: '/important-links', label: 'Important links', description: 'Quick access to external tools' },
   { to: '/spitogatos', label: 'Spitogatos', description: 'Property listings and crawler' },
   { to: '/ledger', label: 'Ledger', description: 'Property cashflow and finances' },
+  {
+    to: '/cashflow-matching',
+    label: 'Accrual–Payment Matching',
+    description: 'Match cashflow accruals to equal-amount payments by period',
+  },
   { to: '/groups', label: 'Groups', description: 'Manage and share with contact groups' },
 ]
 
