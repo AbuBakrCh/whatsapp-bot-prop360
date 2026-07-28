@@ -189,25 +189,27 @@ export default function AccrualPaymentMatching() {
   const currentPage = pagination?.page || page;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="h-[70px] px-4 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-4">
-          <Link to="/" className="text-sm text-gray-500 hover:text-gray-800">
-            ← Home
-          </Link>
-          <h1 className="text-lg font-semibold text-gray-800">
-            Accrual–Payment Matching
-          </h1>
-        </div>
+    <div className="min-h-screen flex flex-col bg-slate-50">
+      <div className="p-4 bg-white border-b border-green-200 flex justify-between items-center shadow-sm">
+        <h1 className="text-lg font-semibold text-green-600">
+          Accrual–Payment Matching
+        </h1>
+        <Link
+          to="/"
+          className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg text-sm transition"
+        >
+          ← Back to Dashboard
+        </Link>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="flex-1 max-w-4xl mx-auto w-full p-6">
         <form
           onSubmit={handleLoad}
           className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 mb-6"
         >
           <p className="text-sm text-gray-600 mb-4">
-            Dates are in Greece time. Matching is by equal amount only.
+            Dates are in Greece time. Matching is by equal amount only — nothing
+            is saved.
           </p>
 
           <div className="flex flex-col gap-4 mb-4">
