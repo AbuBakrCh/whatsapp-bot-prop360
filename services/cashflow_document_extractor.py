@@ -476,6 +476,26 @@ def _to_iso_due_date(value: str) -> str:
     return utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
+def _to_dd_mm_yyyy(value: str) -> str:
+    """Format a calendar date as DD/MM/YYYY with no timezone conversion."""
+    if not value:
+        return ""
+    text = value.strip()
+    # Drop time portion if present (e.g. "10/07/2026 14:53" or "10/07/2026 (Now)")
+    text = re.split(r"\s+", text, maxsplit=1)[0]
+    text = text.strip("()")
+    parsed: datetime | None = None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+            break
+        except ValueError:
+            continue
+    if not parsed:
+        return value.strip()
+    return parsed.strftime("%d/%m/%Y")
+
+
 def _parse_amount_two_decimals(value: Any) -> str | None:
     parsed = _parse_amount(value)
     if not parsed:
@@ -978,7 +998,7 @@ def build_invoice_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     trx_payer = _normalize_trx_payer(extracted.get("trx_payer", ""))
     invoice_source = _normalize_invoice_source(extracted.get("invoice_source", ""))
     payment_method = _normalize_trx_payment_method(extracted.get("trx_payment_method", ""))
-    issue_date = _to_iso_due_date(extracted.get("invoice_issue_date", ""))
+    issue_date = _to_dd_mm_yyyy(extracted.get("invoice_issue_date", ""))
     amount_ex_vat = _parse_amount_optional(extracted.get("amount_excluding_vat"))
     vat_amount = _parse_amount_optional(extracted.get("vat_amount"))
     total_amount = _parse_amount_optional(extracted.get("total_amount"))
