@@ -329,7 +329,16 @@ INVOICE_EXTRACTION_SCHEMA = {
         "Bank name and/or IBAN payment details for settling the invoice. Leave empty if not found."
     ),
     "invoice_issuer": (
-        "Company or person issuing the invoice (seller / vendor). Leave empty if not found."
+        "Official company or person name of the invoice issuer (seller / vendor), "
+        "copied EXACTLY as printed on the invoice. Preserve all punctuation, "
+        "abbreviations, and legal-form suffixes (e.g. Ο.Ε., Α.Ε., Ι.Κ.Ε., Ε.Π.Ε., O.E., S.A.). "
+        "Do not expand, translate, title-case, or otherwise rewrite the name. "
+        "Leave empty if not found."
+    ),
+    "issuer_profession": (
+        "Issuer profession / business activity / επάγγελμα as printed near the company "
+        "header (e.g. ΥΔΡΑΥΛΙΚΕΣ ΕΡΓΑΣΙΕΣ). Copy exactly as printed; do not translate. "
+        "Do not use invoice line-item descriptions. Leave empty if not found."
     ),
     "invoice_issue_date": (
         "Invoice issue date. Return as YYYY-MM-DD."
@@ -343,7 +352,7 @@ INVOICE_EXTRACTION_SCHEMA = {
         "Use 'Third Party Invoice' when issued by any other company. Leave empty if unclear."
     ),
     "invoice_issuer_tax_id": (
-        "Issuer tax ID / Α.Φ.Μ. / VAT number. Leave empty if not found."
+        "Issuer Α.Φ.Μ. (AFM / Tax Number) exactly as printed. Leave empty if not found."
     ),
     "invoice_recipient_tax_id": (
         "Recipient tax ID / Α.Φ.Μ. / VAT number. Leave empty if not found."
@@ -815,6 +824,9 @@ def _extract_invoice_with_gemini(
 - Templates vary widely — extract by meaning, not by layout or coordinates.
 - If the file contains multiple invoices, extract ONLY the first invoice.
 - Do NOT assume a specific company or template.
+- invoice_issuer must be the exact printed legal/company name, including punctuation
+  and suffixes such as Ο.Ε. / Α.Ε. / Ι.Κ.Ε. — do not rewrite or normalize the name.
+- issuer_profession is the επάγγελμα / activity near the issuer header (not line items).
 - trx_payer must be exactly "Customer" or "Invest Greece" (or empty).
 - invoice_source must be exactly "Solomon Invoice" or "Third Party Invoice" (or empty).
 - trx_payment_method must be exactly "In Person" or "Bank" (or empty).

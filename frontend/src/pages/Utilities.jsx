@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Mail,
   FileText,
+  FileUp,
   Copy,
   MessageCircle,
   Building2,
@@ -25,6 +26,7 @@ import AddProperties from './AddProperties'
 import ManageTimetables from './ManageTimetables'
 import ManageCashflows from './ManageCashflows'
 import AddContacts from './AddContacts'
+import CreateContactFromInvoice from './CreateContactFromInvoice'
 import GenerateActivitySummaries from './GenerateActivitySummaries'
 import PropertyActivitySummaries from './PropertyActivitySummaries'
 import MergeContacts from './MergeContacts'
@@ -95,6 +97,14 @@ const tools = [
     icon: UserPlus,
     group: 'Data',
     render: () => <AddContacts />,
+  },
+  {
+    id: 'contact-from-invoice',
+    label: 'Contact from Invoice',
+    description: 'Create a contact from an invoice upload',
+    icon: FileUp,
+    group: 'Data',
+    render: () => <CreateContactFromInvoice />,
   },
   {
     id: 'merge-contacts',

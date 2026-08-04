@@ -53,6 +53,13 @@ from services.ledger_report import (
 )
 from services.accrual_payment_matching import fetch_accrual_payment_matches
 from services.cashflow_document_extractor import extract_cashflow_data_from_document
+from services.contact_from_invoice import (
+    build_contact_payload_from_invoice,
+    contact_summary_from_doc,
+    extract_issuer_from_invoice,
+    find_existing_contact,
+    serialize_contact_result,
+)
 from share_property_job import start_property_match_scheduler
 from transfer_ownership import start_scheduler, transfer_ownership
 
@@ -889,11 +896,11 @@ def _extract_prop360_contact_id(result: dict) -> str | None:
     return None
 
 
-async def create_contact_in_prop360(name: str, phone: str, info: str) -> str:
+async def create_contact_in_prop360_with_data(data: dict) -> str:
     if not PROP_AUTH_TOKEN:
         raise HTTPException(status_code=500, detail="PROP360_BEARER_TOKEN is not configured")
 
-    payload = _build_prop360_contact_payload(name, phone, info)
+    payload = {"data": data}
     headers = {
         "Authorization": f"Bearer {PROP_AUTH_TOKEN}",
         "Content-Type": "application/json",
@@ -921,6 +928,11 @@ async def create_contact_in_prop360(name: str, phone: str, info: str) -> str:
         )
 
     return contact_id
+
+
+async def create_contact_in_prop360(name: str, phone: str, info: str) -> str:
+    payload = _build_prop360_contact_payload(name, phone, info)
+    return await create_contact_in_prop360_with_data(payload["data"])
 
 
 # --- 🟢 GET /details endpoint ---
@@ -1285,6 +1297,58 @@ async def extract_cashflow_from_document(
             filename=file.filename,
         )
         return {"data": data}
+    except ValueError as exc:
+        detail = str(exc)
+        if "not supported" in detail.lower():
+            raise HTTPException(status_code=422, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.post("/contacts/from-invoice")
+async def create_contact_from_invoice(file: UploadFile = File(...)):
+    """
+    Extract invoice issuer details, match an existing contact by AFM/Tax Number
+    (then company name), and create a Prop360 contact only when none exists.
+    """
+    try:
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+        extracted = extract_issuer_from_invoice(file_bytes, filename=file.filename)
+        issuer = extracted.get("issuer") or ""
+        tax_id = extracted.get("taxId") or ""
+
+        if not tax_id and not issuer:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not identify invoice issuer (no tax ID or company name found)",
+            )
+
+        existing, matched_by = await find_existing_contact(prop_db, tax_id, issuer)
+        if existing:
+            contact_id = str(existing.get("_id"))
+            return serialize_contact_result(
+                status="existing",
+                contact_id=contact_id,
+                matched_by=matched_by,
+                extracted=extracted,
+                contact=contact_summary_from_doc(existing),
+            )
+
+        payload = build_contact_payload_from_invoice(extracted)
+        contact_id = await create_contact_in_prop360_with_data(payload["data"])
+        return serialize_contact_result(
+            status="created",
+            contact_id=contact_id,
+            matched_by=None,
+            extracted=extracted,
+        )
+    except HTTPException:
+        raise
     except ValueError as exc:
         detail = str(exc)
         if "not supported" in detail.lower():

@@ -160,6 +160,20 @@ export async function addContacts(payload) {
   }
 }
 
+export async function createContactFromInvoice(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const response = await axios.post(`${BASE}/contacts/from-invoice`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error creating contact from invoice:", err);
+    throw err;
+  }
+}
+
 export async function deleteContacts(payload) {
   try {
     const response = await axios.post(`${BASE}/contacts/delete`, payload);
