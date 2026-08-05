@@ -118,6 +118,16 @@ def _name_match_pattern(name: str) -> str | None:
     return r"^\s*" + r"\s+".join(re.escape(p) for p in parts) + r"\s*$"
 
 
+def issuer_fields_from_invoice_extraction(extracted: dict[str, Any]) -> dict[str, str]:
+    """Map a raw Gemini invoice extraction dict to contact issuer fields."""
+    return {
+        "issuer": restore_issuer_name_punctuation(extracted.get("invoice_issuer")),
+        "taxId": _preserve_printed_text(extracted.get("invoice_issuer_tax_id")),
+        "address": _preserve_printed_text(extracted.get("company_address")),
+        "profession": _preserve_printed_text(extracted.get("issuer_profession")),
+    }
+
+
 def extract_issuer_from_invoice(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, str]:
@@ -129,12 +139,8 @@ def extract_issuer_from_invoice(
         )
 
     extracted = _extract_invoice_with_gemini(file_bytes, filename=filename)
-    return {
-        "issuer": restore_issuer_name_punctuation(extracted.get("invoice_issuer")),
-        "taxId": _preserve_printed_text(extracted.get("invoice_issuer_tax_id")),
-        "address": _preserve_printed_text(extracted.get("company_address")),
-        "profession": _preserve_printed_text(extracted.get("issuer_profession")),
-    }
+    return issuer_fields_from_invoice_extraction(extracted)
+
 
 
 def build_contact_payload_from_invoice(extracted: dict[str, str]) -> dict[str, Any]:

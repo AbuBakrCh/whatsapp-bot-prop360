@@ -52,12 +52,19 @@ from services.ledger_report import (
     fetch_ledger_report,
 )
 from services.accrual_payment_matching import fetch_accrual_payment_matches
-from services.cashflow_document_extractor import extract_cashflow_data_from_document
+from services.cashflow_document_extractor import (
+    DOCUMENT_TYPE_INVOICE,
+    _extract_invoice_with_gemini,
+    build_invoice_cashflow_data,
+    extract_cashflow_data_from_document,
+    normalize_document_type,
+)
 from services.contact_from_invoice import (
     build_contact_payload_from_invoice,
     contact_summary_from_doc,
     extract_issuer_from_invoice,
     find_existing_contact,
+    issuer_fields_from_invoice_extraction,
     serialize_contact_result,
 )
 from share_property_job import start_property_match_scheduler
@@ -1285,18 +1292,38 @@ async def extract_cashflow_from_document(
     """
     Extract Prop360 cashflow `data` fields from a bill document (PDF/image).
     Currently supports: electricity_bill, common_expenses, water_bill, bank_receipt, invoice
+
+    For invoices, also ensures the issuer contact exists (create if missing).
+    Contact match/create failures never block the cashflow extraction response.
     """
     try:
         file_bytes = await file.read()
         if not file_bytes:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-        data = extract_cashflow_data_from_document(
-            file_bytes,
-            document_type=document_type,
-            filename=file.filename,
-        )
-        return {"data": data}
+        normalized = normalize_document_type(document_type)
+        contact_result = None
+
+        if normalized == DOCUMENT_TYPE_INVOICE:
+            # Single Gemini pass: cashflow fields + issuer contact ensure
+            invoice_extracted = _extract_invoice_with_gemini(
+                file_bytes, filename=file.filename
+            )
+            data = build_invoice_cashflow_data(invoice_extracted)
+            contact_result = await _ensure_invoice_issuer_contact_best_effort(
+                invoice_extracted
+            )
+        else:
+            data = extract_cashflow_data_from_document(
+                file_bytes,
+                document_type=document_type,
+                filename=file.filename,
+            )
+
+        response: dict[str, Any] = {"data": data}
+        if contact_result is not None:
+            response["contact"] = contact_result
+        return response
     except ValueError as exc:
         detail = str(exc)
         if "not supported" in detail.lower():
@@ -1305,6 +1332,42 @@ async def extract_cashflow_from_document(
     except Exception as exc:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+async def _ensure_invoice_issuer_contact_best_effort(
+    invoice_extracted: dict,
+) -> dict | None:
+    """
+    Match or create the invoice issuer contact. Never raises — returns None on skip/failure.
+    """
+    try:
+        issuer_fields = issuer_fields_from_invoice_extraction(invoice_extracted)
+        issuer = issuer_fields.get("issuer") or ""
+        tax_id = issuer_fields.get("taxId") or ""
+        if not tax_id and not issuer:
+            return None
+
+        existing, matched_by = await find_existing_contact(prop_db, tax_id, issuer)
+        if existing:
+            return serialize_contact_result(
+                status="existing",
+                contact_id=str(existing.get("_id")),
+                matched_by=matched_by,
+                extracted=issuer_fields,
+                contact=contact_summary_from_doc(existing),
+            )
+
+        payload = build_contact_payload_from_invoice(issuer_fields)
+        contact_id = await create_contact_in_prop360_with_data(payload["data"])
+        return serialize_contact_result(
+            status="created",
+            contact_id=contact_id,
+            matched_by=None,
+            extracted=issuer_fields,
+        )
+    except Exception:
+        traceback.print_exc()
+        return None
 
 
 @fastapi_app.post("/contacts/from-invoice")
