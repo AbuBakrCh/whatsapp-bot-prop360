@@ -27,6 +27,7 @@ import ManageTimetables from './ManageTimetables'
 import ManageCashflows from './ManageCashflows'
 import AddContacts from './AddContacts'
 import CreateContactFromInvoice from './CreateContactFromInvoice'
+import GenerateInvoice from './GenerateInvoice'
 import GenerateActivitySummaries from './GenerateActivitySummaries'
 import PropertyActivitySummaries from './PropertyActivitySummaries'
 import MergeContacts from './MergeContacts'
@@ -129,6 +130,14 @@ const tools = [
     icon: Wallet,
     group: 'Finance',
     render: () => <ManageCashflows />,
+  },
+  {
+    id: 'generate-invoice',
+    label: 'Generate Invoice',
+    description: 'Create consultant invoice PDF',
+    icon: FileText,
+    group: 'Finance',
+    render: () => <GenerateInvoice />,
   },
   {
     id: 'daily-activity',
