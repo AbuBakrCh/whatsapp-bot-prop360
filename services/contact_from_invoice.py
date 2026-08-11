@@ -14,7 +14,6 @@ from services.cashflow_document_extractor import (
 FIELD_FULL_NAME = "field-1741774547654-ngd30kdcz"
 FIELD_CORPORATE_NAME = "field-1741774642959-g8l3j9yme"
 FIELD_TAX_NUMBER = "field-1741897315101-ltzxw2gxo"
-FIELD_VAT_NUMBER = "field-1741896055075-46mjpj2qf"
 FIELD_ADDRESS = "field-1741778662831-kkrtmk0rq"
 FIELD_PROFESSION = "field-1751377453325-eif6cg1yp"
 
@@ -187,6 +186,9 @@ async def find_existing_contact(
     """
     Find an active contact by Tax Number first, then by company name.
 
+    Tax IDs may be stored as strings (console) or ints (imports). $regex only
+    matches strings, so we also exact-match the numeric form.
+
     Returns (document, matched_by) where matched_by is 'tax_number' | 'name' | None.
     """
     base_filter: dict[str, Any] = {
@@ -194,17 +196,24 @@ async def find_existing_contact(
         "status": "active",
     }
 
-    tax_pattern = _tax_id_match_pattern(tax_id or "")
-    if tax_pattern:
-        tax_query = {
-            **base_filter,
-            "$or": [
-                {f"data.{FIELD_TAX_NUMBER}": {"$regex": tax_pattern, "$options": "i"}},
-                # Legacy contacts may have AFM stored under VAT Number
-                {f"data.{FIELD_VAT_NUMBER}": {"$regex": tax_pattern, "$options": "i"}},
-            ],
-        }
-        doc = await prop_db.formdatas.find_one(tax_query)
+    digits = normalize_tax_id(tax_id or "")
+    # Skip placeholder AFMs (e.g. 000000000) — they are not unique suppliers
+    if digits and not set(digits) <= {"0"}:
+        tax_clauses: list[dict[str, Any]] = [
+            {f"data.{FIELD_TAX_NUMBER}": digits},
+        ]
+
+        # Imported contacts often store AFM as int; $regex would miss those
+        if digits.isdigit():
+            tax_clauses.append({f"data.{FIELD_TAX_NUMBER}": int(digits)})
+
+        tax_pattern = _tax_id_match_pattern(digits)
+        if tax_pattern:
+            tax_clauses.append(
+                {f"data.{FIELD_TAX_NUMBER}": {"$regex": tax_pattern, "$options": "i"}}
+            )
+
+        doc = await prop_db.formdatas.find_one({**base_filter, "$or": tax_clauses})
         if doc:
             return doc, "tax_number"
 
