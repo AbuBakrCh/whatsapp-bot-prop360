@@ -207,7 +207,7 @@ async def send_common_expenses_owner_emails(prop_db):
                 [owner_email],
                 subject,
                 body,
-                None,
+                ["ka@investgreece.gr"],
                 None,
                 attachments or None,
             )
