@@ -7,10 +7,13 @@ def send_email_v2(
     subject: str,
     body: str,
     cc: list[str] | None = None,
-    bcc: list[str] | None = None
+    bcc: list[str] | None = None,
+    attachments: list[tuple[str, bytes, str, str]] | None = None,
 ):
     """
     Send an email via Gmail SMTP.
+
+    attachments: optional list of (filename, content, maintype, subtype)
     """
     email_address = os.getenv("EMAIL_ADDRESS")
     email_app_password = os.getenv("EMAIL_APP_PASSWORD")
@@ -39,6 +42,15 @@ def send_email_v2(
         msg.add_alternative(body, subtype="html")
     else:
         msg.set_content(body)
+
+    if attachments:
+        for filename, content, maintype, subtype in attachments:
+            msg.add_attachment(
+                content,
+                maintype=maintype,
+                subtype=subtype,
+                filename=filename,
+            )
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(email_address, email_app_password)

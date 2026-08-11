@@ -38,6 +38,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from activity_summary_emails import get_next_hourly_run_greece, start_activity_summary_emails_scheduler
+from common_expenses_owner_email_job import start_common_expenses_owner_email_scheduler
 from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
 from ide_expiry_job import start_ide_expiry_scheduler
@@ -404,8 +405,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#df = load_dataset_from_google_sheet(SHEET_ID)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -716,6 +717,7 @@ async def ensure_indexes():
     start_passport_expiry_scheduler(db, prop_db)
     start_ide_expiry_scheduler(db, prop_db)
     start_property_match_scheduler(db, prop_db)
+    start_common_expenses_owner_email_scheduler(prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
