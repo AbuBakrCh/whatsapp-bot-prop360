@@ -278,10 +278,19 @@ BANK_RECEIPT_EXTRACTION_SCHEMA = {
     ),
     "trx_bank": (
         "Bank name issuing the receipt (logo or header, e.g. Optima bank, Eurobank, Alpha Bank). "
+        "Return the bank name only — do not include account numbers. "
         "Return the bank name in title case Latin characters when possible."
     ),
+    "sender_account": (
+        "Sender / origin / from account number (Από λογαριασμό). "
+        "This is the depositor's account at the issuing bank — NOT the beneficiary IBAN. "
+        "Leave empty if not found."
+    ),
     "total_amount": (
-        "Transfer amount in euros. Numeric string with dot decimal. Leave empty if not found."
+        "Transfer amount only (Ποσό μεταφοράς / Amount transferred / Transfer amount) in euros. "
+        "Do NOT use Συνολικό ποσό χρέωσης / Total amount charged / Total debit "
+        "(those include bank fees). Do NOT use fee rows (Ανάλυση εξόδων, Χρέωση εξόδων, "
+        "bank fees / Τραπεζικά έξοδα). Numeric string with dot decimal. Leave empty if not found."
     ),
     "transaction_type": (
         "Transaction type / title of the transfer "
@@ -296,7 +305,8 @@ BANK_RECEIPT_EXTRACTION_SCHEMA = {
         "Beneficiary / payee name (who receives the money). Leave empty if not found."
     ),
     "beneficiary_account": (
-        "Beneficiary account number or IBAN (To account). Leave empty if not found."
+        "Beneficiary / destination account number or IBAN (Προς λογαριασμό / To account). "
+        "Do NOT use the sender/from account (Από λογαριασμό). Leave empty if not found."
     ),
 }
 
@@ -330,9 +340,13 @@ INVOICE_EXTRACTION_SCHEMA = {
     ),
     "invoice_issuer": (
         "Official company or person name of the invoice issuer (seller / vendor), "
-        "copied EXACTLY as printed on the invoice. Preserve all punctuation, "
-        "abbreviations, and legal-form suffixes (e.g. Ο.Ε., Α.Ε., Ι.Κ.Ε., Ε.Π.Ε., O.E., S.A.). "
-        "Do not expand, translate, title-case, or otherwise rewrite the name. "
+        "copied CHARACTER-FOR-CHARACTER as printed — including every period/dot. "
+        "CRITICAL: keep abbreviation dots. Example: if the invoice shows "
+        "'ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.' return exactly 'ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.' "
+        "(NOT 'ΖΑΧΟΣ Α ΣΙΑ ΟΕ'). "
+        "Preserve legal-form suffixes Ο.Ε., Α.Ε., Ι.Κ.Ε., Ε.Π.Ε., O.E., S.A. with their dots. "
+        "Preserve single-letter initials with their trailing dots (e.g. Α.). "
+        "Do not expand, translate, title-case, strip punctuation, or otherwise rewrite. "
         "Leave empty if not found."
     ),
     "issuer_profession": (
@@ -531,6 +545,18 @@ def _format_bank_name(value: str) -> str:
     if not text:
         return ""
     return " ".join(part.capitalize() if part.isupper() or part.islower() else part for part in text.split())
+
+
+def _format_trx_bank_with_sender(bank_name: str, sender_account: str) -> str:
+    bank = _format_bank_name(bank_name)
+    account = sender_account.strip()
+    if bank and account:
+        return f"{bank} (Account No: {account})"
+    if bank:
+        return bank
+    if account:
+        return f"(Account No: {account})"
+    return ""
 
 
 def _format_beneficiary_who_gets_money(name: str, account: str) -> str:
@@ -804,7 +830,10 @@ def _extract_bank_receipt_with_gemini(
 - Do NOT assume a specific bank or receipt template.
 - trx_date and trx_value_date must be YYYY-MM-DD (date only, no time).
 - transaction_type is the transfer title/type; payment_reference is the remittance/payment details text.
-- beneficiary_name and beneficiary_account are the payee receiving the funds (not the depositor).
+- trx_bank is the issuing bank from the logo/header only (no account numbers).
+- sender_account is Από λογαριασμό / from / origin account (depositor). Never use the beneficiary IBAN here.
+- beneficiary_name and beneficiary_account are the payee receiving the funds (Προς λογαριασμό / to account), not the depositor.
+- total_amount must be Ποσό μεταφοράς / transfer amount only. Never use Συνολικό ποσό χρέωσης / total charged (includes fees). Ignore fee rows.
 """,
     )
 
@@ -824,8 +853,9 @@ def _extract_invoice_with_gemini(
 - Templates vary widely — extract by meaning, not by layout or coordinates.
 - If the file contains multiple invoices, extract ONLY the first invoice.
 - Do NOT assume a specific company or template.
-- invoice_issuer must be the exact printed legal/company name, including punctuation
-  and suffixes such as Ο.Ε. / Α.Ε. / Ι.Κ.Ε. — do not rewrite or normalize the name.
+- invoice_issuer is a verbatim string copy of the printed legal/company name.
+  NEVER remove periods from abbreviations or initials.
+  Wrong: "ΖΑΧΟΣ Α ΣΙΑ ΟΕ". Correct: "ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.".
 - issuer_profession is the επάγγελμα / activity near the issuer header (not line items).
 - trx_payer must be exactly "Customer" or "Invest Greece" (or empty).
 - invoice_source must be exactly "Solomon Invoice" or "Third Party Invoice" (or empty).
@@ -966,7 +996,10 @@ def build_bank_receipt_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any
     trx_ref = (extracted.get("trx_ref_no") or "").strip()
     trx_date = _to_iso_due_date(extracted.get("trx_date", ""))
     trx_value_date = _to_iso_due_date(extracted.get("trx_value_date", "")) or trx_date
-    trx_bank = _format_bank_name(extracted.get("trx_bank", ""))
+    trx_bank = _format_trx_bank_with_sender(
+        extracted.get("trx_bank", ""),
+        extracted.get("sender_account", ""),
+    )
     total_amount = _parse_amount_two_decimals(extracted.get("total_amount"))
     notes = _format_invest_greece_notes(
         extracted.get("transaction_type", ""),
