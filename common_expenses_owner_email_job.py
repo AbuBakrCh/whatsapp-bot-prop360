@@ -36,9 +36,11 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 FIELD_DOCUMENT_TYPE = "field-1758699529035-xp7lumgx5"
+FIELD_CATEGORY = "field-1780751488281-e84mgqaeo"
 FIELD_ATTACHMENT = "field-1780858164714-qr9of1dwh"
 FIELD_CONTACT_EMAIL = "field-1741774690043-v7jylsjj2"
 DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
+CATEGORY_ACCRUAL = "Accrual"
 PROP360_IMAGE_API = "https://prop360.pro/api/image"
 LOOKBACK_MINUTES = 15
 DOWNLOAD_TIMEOUT_SECONDS = 60
@@ -133,6 +135,7 @@ async def send_common_expenses_owner_emails(prop_db):
         "indicator": CASHFLOW_INDICATOR,
         "status": "active",
         f"data.{FIELD_DOCUMENT_TYPE}": DOCUMENT_TYPE_COMMON_EXPENSES,
+        f"data.{FIELD_CATEGORY}": CATEGORY_ACCRUAL,
         "metadata.createdAt": {"$gte": since},
         "metadata.commonExpensesOwnerEmailSentAt": {"$exists": False},
     }
