@@ -717,7 +717,7 @@ async def ensure_indexes():
     start_passport_expiry_scheduler(db, prop_db)
     start_ide_expiry_scheduler(db, prop_db)
     start_property_match_scheduler(db, prop_db)
-    start_common_expenses_owner_email_scheduler(prop_db)
+    start_common_expenses_owner_email_scheduler(db, prop_db)
 
 # --- Admin HTTP endpoint to send message from dashboard ---
 @fastapi_app.post("/send")
@@ -3485,6 +3485,60 @@ async def get_expiry_job_controls():
         "success": True,
         "data": jobs
     }
+
+EMAIL_RECIPIENT_JOB_IDS = ["common_expenses_owner_email_job"]
+
+
+def _parse_email_list(emails_str) -> list[str]:
+    if emails_str is None:
+        return []
+    if not isinstance(emails_str, str):
+        emails_str = str(emails_str)
+    return [email.strip() for email in emails_str.split(",") if email.strip()]
+
+
+@fastapi_app.get("/job-control/email-recipients")
+async def get_job_email_recipients():
+    cursor = db.job_control.find({"_id": {"$in": EMAIL_RECIPIENT_JOB_IDS}})
+    by_id = {}
+    async for doc in cursor:
+        by_id[doc.get("_id")] = {
+            "job_id": doc.get("_id"),
+            "to": doc.get("to", []) or [],
+            "cc": doc.get("cc", []) or [],
+        }
+
+    jobs = [
+        by_id.get(job_id, {"job_id": job_id, "to": [], "cc": []})
+        for job_id in EMAIL_RECIPIENT_JOB_IDS
+    ]
+    return {"success": True, "data": jobs}
+
+
+@fastapi_app.post("/job-control/email-recipients")
+async def upsert_job_email_recipients(payload: dict = Body(...)):
+    job_id = payload.get("job_id")
+    if not job_id:
+        return {"success": False, "message": "job_id is required"}
+    if job_id not in EMAIL_RECIPIENT_JOB_IDS:
+        return {"success": False, "message": f"Unsupported job_id: {job_id}"}
+
+    to_list = _parse_email_list(payload.get("to", ""))
+    cc_list = _parse_email_list(payload.get("cc", ""))
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {
+            "$set": {
+                "to": to_list,
+                "cc": cc_list,
+                "updatedAt": datetime.utcnow(),
+            }
+        },
+        upsert=True,
+    )
+    return {"success": True}
+
 
 @fastapi_app.post("/crawler/spitogatos")
 async def trigger_spitogatos_crawl(payload: dict):

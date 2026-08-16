@@ -44,6 +44,37 @@ CATEGORY_ACCRUAL = "Accrual"
 PROP360_IMAGE_API = "https://prop360.pro/api/image"
 LOOKBACK_MINUTES = 15
 DOWNLOAD_TIMEOUT_SECONDS = 60
+JOB_CONTROL_ID = "common_expenses_owner_email_job"
+DEFAULT_CC = ["ka@investgreece.gr"]
+
+
+def _merge_emails(*lists: list[str]) -> list[str]:
+    """Order-preserving merge with case-insensitive dedupe."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for emails in lists:
+        for email in emails or []:
+            cleaned = str(email).strip()
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(cleaned)
+    return result
+
+
+async def get_job_email_recipients(db) -> tuple[list[str], list[str]]:
+    if db is None:
+        return [], []
+    doc = await db.job_control.find_one({"_id": JOB_CONTROL_ID})
+    if not doc:
+        return [], []
+    to_list = [str(e).strip() for e in (doc.get("to") or []) if str(e).strip()]
+    cc_list = [str(e).strip() for e in (doc.get("cc") or []) if str(e).strip()]
+    return to_list, cc_list
+
 
 EMAIL_BODY_TEMPLATE = """Sayın {customer_name},
 
@@ -123,13 +154,14 @@ async def _resolve_owner_email(prop_db, owner_pid: str) -> str | None:
     return email or None
 
 
-async def send_common_expenses_owner_emails(prop_db):
+async def send_common_expenses_owner_emails(prop_db, db=None):
     if not _is_job_enabled():
         logger.info("Common expenses owner email job disabled")
         return
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(minutes=LOOKBACK_MINUTES)
+    db_to, db_cc = await get_job_email_recipients(db)
 
     query = {
         "indicator": CASHFLOW_INDICATOR,
@@ -204,21 +236,25 @@ async def send_common_expenses_owner_emails(prop_db):
                 cashflow_id,
             )
 
+        to_list = _merge_emails([owner_email], db_to)
+        cc_list = _merge_emails(DEFAULT_CC, db_cc)
+
         try:
             await asyncio.to_thread(
                 send_email_v2,
-                [owner_email],
+                to_list,
                 subject,
                 body,
-                ["ka@investgreece.gr"],
+                cc_list,
                 None,
                 attachments or None,
             )
         except Exception:
             logger.exception(
-                "Failed to send email | cashflow=%s | to=%s",
+                "Failed to send email | cashflow=%s | to=%s | cc=%s",
                 cashflow_id,
-                owner_email,
+                to_list,
+                cc_list,
             )
             continue
 
@@ -234,9 +270,10 @@ async def send_common_expenses_owner_emails(prop_db):
         )
         sent += 1
         logger.info(
-            "Sent common expenses owner email | cashflow=%s | to=%s | attached=%s",
+            "Sent common expenses owner email | cashflow=%s | to=%s | cc=%s | attached=%s",
             cashflow_id,
-            owner_email,
+            to_list,
+            cc_list,
             bool(attachments),
         )
 
@@ -248,7 +285,7 @@ async def send_common_expenses_owner_emails(prop_db):
     )
 
 
-def start_common_expenses_owner_email_scheduler(prop_db):
+def start_common_expenses_owner_email_scheduler(db, prop_db):
     """
     Starts the common expenses owner email scheduler.
     Call this once during FastAPI startup.
@@ -256,7 +293,7 @@ def start_common_expenses_owner_email_scheduler(prop_db):
     scheduler.add_job(
         send_common_expenses_owner_emails,
         CronTrigger(minute="*/15"),
-        args=[prop_db],
+        args=[prop_db, db],
         id="common_expenses_owner_email_job",
         replace_existing=True,
         max_instances=1,

@@ -17,6 +17,7 @@ import {
   GitMerge,
   PlayCircle,
   Timer,
+  AtSign,
 } from 'lucide-react'
 import SendBulkEmail from './SendBulkEmail'
 import ProcessBankStatementsDrive from './ProcessBankStatementsDrive'
@@ -33,6 +34,7 @@ import PropertyActivitySummaries from './PropertyActivitySummaries'
 import MergeContacts from './MergeContacts'
 import JobControl from './JobControl'
 import ExpiryJobsControl from './ExpiryJobsControl'
+import JobEmailRecipientsControl from './JobEmailRecipientsControl'
 
 const tools = [
   {
@@ -156,6 +158,14 @@ const tools = [
     icon: Timer,
     group: 'Jobs',
     render: () => <ExpiryJobsControl />,
+  },
+  {
+    id: 'job-email-recipients',
+    label: 'Job Email Recipients',
+    description: 'Configure To/Cc emails for jobs',
+    icon: AtSign,
+    group: 'Jobs',
+    render: () => <JobEmailRecipientsControl />,
   },
 ]
 

@@ -371,6 +371,30 @@ export async function upsertExpiryJobRecipients(jobId, emails) {
   }
 }
 
+export async function getJobEmailRecipients() {
+  try {
+    const res = await axios.get(`${BASE}/job-control/email-recipients`);
+    return res.data;
+  } catch (err) {
+    console.error("Error fetching job email recipients:", err);
+    throw err;
+  }
+}
+
+export async function upsertJobEmailRecipients(jobId, to, cc) {
+  try {
+    const res = await axios.post(`${BASE}/job-control/email-recipients`, {
+      job_id: jobId,
+      to: to ?? "",
+      cc: cc ?? "",
+    });
+    return res.data;
+  } catch (err) {
+    console.error(`Error updating email recipients for job ${jobId}:`, err);
+    throw err;
+  }
+}
+
 export async function startSpitogatosCrawler(payload) {
   try {
     const response = await axios.post(`${BASE}/crawler/spitogatos`, payload);
