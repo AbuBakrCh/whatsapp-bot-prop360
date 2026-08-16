@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import App from "./App";
 import WhatsAppMessenger from "./pages/WhatsAppMessenger";
 import Utilities from "./pages/Utilities";
@@ -12,7 +12,7 @@ import Groups from "./pages/Groups";
 import "./styles.css";
 
 createRoot(document.getElementById("root")).render(
-  <BrowserRouter>
+  <HashRouter>
     <Routes>
       <Route path="/" element={<App />} />
       <Route path="/messenger" element={<WhatsAppMessenger />} />
@@ -23,5 +23,5 @@ createRoot(document.getElementById("root")).render(
       <Route path="/cashflow-matching" element={<AccrualPaymentMatching />} />
       <Route path="/groups" element={<Groups />} />
     </Routes>
-  </BrowserRouter>
+  </HashRouter>
 );
