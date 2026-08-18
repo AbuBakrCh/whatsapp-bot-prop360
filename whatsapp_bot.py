@@ -3486,7 +3486,11 @@ async def get_expiry_job_controls():
         "data": jobs
     }
 
-EMAIL_RECIPIENT_JOB_IDS = ["common_expenses_owner_email_job"]
+EMAIL_RECIPIENT_JOB_IDS = [
+    "common_expenses_owner_email_job",
+    "electricity_bill_owner_email_job",
+    "water_bill_owner_email_job",
+]
 
 
 def _parse_email_list(emails_str) -> list[str]:

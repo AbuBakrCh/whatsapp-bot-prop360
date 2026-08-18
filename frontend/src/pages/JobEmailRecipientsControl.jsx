@@ -9,6 +9,14 @@ const JOBS = [
     id: "common_expenses_owner_email_job",
     name: "Common Expenses Owner Email",
   },
+  {
+    id: "electricity_bill_owner_email_job",
+    name: "Electricity Bill Owner Email",
+  },
+  {
+    id: "water_bill_owner_email_job",
+    name: "Water Bill Owner Email",
+  },
 ];
 
 function formatList(emails) {
