@@ -18,6 +18,7 @@ import {
   PlayCircle,
   Timer,
   AtSign,
+  AlertCircle,
 } from 'lucide-react'
 import SendBulkEmail from './SendBulkEmail'
 import ProcessBankStatementsDrive from './ProcessBankStatementsDrive'
@@ -31,6 +32,7 @@ import CreateContactFromInvoice from './CreateContactFromInvoice'
 import GenerateInvoice from './GenerateInvoice'
 import GenerateActivitySummaries from './GenerateActivitySummaries'
 import PropertyActivitySummaries from './PropertyActivitySummaries'
+import IncompleteTimetables from './IncompleteTimetables'
 import MergeContacts from './MergeContacts'
 import JobControl from './JobControl'
 import ExpiryJobsControl from './ExpiryJobsControl'
@@ -68,6 +70,14 @@ const tools = [
     icon: ClipboardList,
     group: 'Messaging',
     render: () => <PropertyActivitySummaries />,
+  },
+  {
+    id: 'incomplete-timetables',
+    label: 'Incomplete Timetables',
+    description: 'Agents missing contact or property on activities',
+    icon: AlertCircle,
+    group: 'Messaging',
+    render: () => <IncompleteTimetables />,
   },
   {
     id: 'process-docs',

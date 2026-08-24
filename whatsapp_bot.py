@@ -52,6 +52,11 @@ from services.ledger_report import (
     build_ledger_excel,
     fetch_ledger_report,
 )
+from services.incomplete_timetables import (
+    DEFAULT_PAGE_SIZE as INCOMPLETE_TT_PAGE_SIZE,
+    get_incomplete_timetables_for_user,
+    list_incomplete_timetables,
+)
 from services.accrual_payment_matching import fetch_accrual_payment_matches
 from services.cashflow_document_extractor import (
     DOCUMENT_TYPE_INVOICE,
@@ -1419,6 +1424,51 @@ async def create_contact_from_invoice(file: UploadFile = File(...)):
         if "not supported" in detail.lower():
             raise HTTPException(status_code=422, detail=detail) from exc
         raise HTTPException(status_code=400, detail=detail) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.get("/utilities/incomplete-timetables")
+async def incomplete_timetables_list(
+    period: str = Query("yesterday"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(INCOMPLETE_TT_PAGE_SIZE, ge=1, le=100),
+    q: str | None = Query(None),
+):
+    """
+    Agents with incomplete timetable counts (missing contact and/or property).
+    period: yesterday | YYYY-MM (2026) | all
+    """
+    try:
+        return await list_incomplete_timetables(
+            prop_db,
+            period=period,
+            page=page,
+            page_size=page_size,
+            q=q,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.get("/utilities/incomplete-timetables/{user_id}")
+async def incomplete_timetables_detail(
+    user_id: str,
+    period: str = Query("yesterday"),
+):
+    """Incomplete timetable activity links for one agent (metadata.createdBy)."""
+    try:
+        return await get_incomplete_timetables_for_user(
+            prop_db,
+            user_id,
+            period=period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
