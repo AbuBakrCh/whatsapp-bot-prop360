@@ -162,6 +162,19 @@ const tools = [
     ),
   },
   {
+    id: 'incomplete-timetables-email',
+    label: 'Incomplete Timetables Email',
+    description: 'Daily incomplete timetable stats to ka@investgreece.gr',
+    icon: Mail,
+    group: 'Jobs',
+    render: () => (
+      <JobControl
+        jobId="incomplete-timetables-email"
+        jobName="Incomplete Timetables Daily Email"
+      />
+    ),
+  },
+  {
     id: 'expiry-jobs',
     label: 'Expiry Jobs',
     description: 'Schedule and review expiry jobs',

@@ -41,6 +41,10 @@ from activity_summary_emails import get_next_hourly_run_greece, start_activity_s
 from common_expenses_owner_email_job import start_common_expenses_owner_email_scheduler
 from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
+from incomplete_timetables_email_job import (
+    start_incomplete_timetables_email_scheduler,
+    send_incomplete_timetables_daily_email,
+)
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
 from passport_expiry_job import start_passport_expiry_scheduler
@@ -715,6 +719,7 @@ async def ensure_indexes():
     start_scheduler(prop_db)
     start_followup_email_scheduler(prop_db)
     start_daily_activity_emails_scheduler(prop_db, db)
+    start_incomplete_timetables_email_scheduler(prop_db, db)
     # Do not block API readiness on a long ownership transfer run.
     asyncio.create_task(transfer_ownership(prop_db))
     start_activity_summary_emails_scheduler(db)
@@ -3273,6 +3278,36 @@ async def control_daily_activity_job(action: str):
             upsert=True
         )
         return {"message": "Stop signal sent"}
+
+
+@fastapi_app.post("/jobs/incomplete-timetables-email")
+async def control_incomplete_timetables_email_job(action: str):
+    if action not in ["start", "stop"]:
+        return {"error": "action must be start or stop"}
+
+    job_id = "incomplete_timetables_email_job"
+    doc = await db.job_control.find_one({"_id": job_id})
+    running = doc.get("running") if doc else False
+
+    if action == "start":
+        if running:
+            return {"message": "Job already running"}
+
+        await db.job_control.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "start"}},
+            upsert=True,
+        )
+        asyncio.create_task(send_incomplete_timetables_daily_email(prop_db, db))
+        return {"message": "Job started"}
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {"$set": {"status": "stop"}},
+        upsert=True,
+    )
+    return {"message": "Stop signal sent"}
+
 
 @fastapi_app.post("/contacts/merge")
 async def merge_contacts(payload: dict):
