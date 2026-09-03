@@ -41,6 +41,10 @@ from activity_summary_emails import get_next_hourly_run_greece, start_activity_s
 from common_expenses_owner_email_job import start_common_expenses_owner_email_scheduler
 from crawler.spitogatos_crawler import SpitogatosCrawler, AuthExpiredError
 from daily_activity_emails import start_daily_activity_emails_scheduler, send_daily_activity_emails
+from incomplete_cashflows_email_job import (
+    start_incomplete_cashflows_email_scheduler,
+    send_incomplete_cashflows_daily_email,
+)
 from incomplete_timetables_email_job import (
     start_incomplete_timetables_email_scheduler,
     send_incomplete_timetables_daily_email,
@@ -55,6 +59,11 @@ from services.ledger_report import (
     GROUP_TYPE_PROPERTY,
     build_ledger_excel,
     fetch_ledger_report,
+)
+from services.incomplete_cashflows import (
+    DEFAULT_PAGE_SIZE as INCOMPLETE_CF_PAGE_SIZE,
+    get_incomplete_cashflows_for_user,
+    list_incomplete_cashflows,
 )
 from services.incomplete_timetables import (
     DEFAULT_PAGE_SIZE as INCOMPLETE_TT_PAGE_SIZE,
@@ -720,6 +729,7 @@ async def ensure_indexes():
     start_followup_email_scheduler(prop_db)
     start_daily_activity_emails_scheduler(prop_db, db)
     start_incomplete_timetables_email_scheduler(prop_db, db)
+    start_incomplete_cashflows_email_scheduler(prop_db, db)
     # Do not block API readiness on a long ownership transfer run.
     asyncio.create_task(transfer_ownership(prop_db))
     start_activity_summary_emails_scheduler(db)
@@ -1468,6 +1478,52 @@ async def incomplete_timetables_detail(
     """Incomplete timetable activity links for one agent (metadata.createdBy)."""
     try:
         return await get_incomplete_timetables_for_user(
+            prop_db,
+            user_id,
+            period=period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.get("/utilities/incomplete-cashflows")
+async def incomplete_cashflows_list(
+    period: str = Query("yesterday"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(INCOMPLETE_CF_PAGE_SIZE, ge=1, le=100),
+    q: str | None = Query(None),
+):
+    """
+    Agents with incomplete cashflow counts (missing contact/owner and/or property).
+    period: yesterday | YYYY-MM (2026) | all
+    Filtered by metadata.createdAt.
+    """
+    try:
+        return await list_incomplete_cashflows(
+            prop_db,
+            period=period,
+            page=page,
+            page_size=page_size,
+            q=q,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.get("/utilities/incomplete-cashflows/{user_id}")
+async def incomplete_cashflows_detail(
+    user_id: str,
+    period: str = Query("yesterday"),
+):
+    """Incomplete cashflow links for one agent (metadata.createdBy)."""
+    try:
+        return await get_incomplete_cashflows_for_user(
             prop_db,
             user_id,
             period=period,
@@ -3299,6 +3355,35 @@ async def control_incomplete_timetables_email_job(action: str):
             upsert=True,
         )
         asyncio.create_task(send_incomplete_timetables_daily_email(prop_db, db))
+        return {"message": "Job started"}
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {"$set": {"status": "stop"}},
+        upsert=True,
+    )
+    return {"message": "Stop signal sent"}
+
+
+@fastapi_app.post("/jobs/incomplete-cashflows-email")
+async def control_incomplete_cashflows_email_job(action: str):
+    if action not in ["start", "stop"]:
+        return {"error": "action must be start or stop"}
+
+    job_id = "incomplete_cashflows_email_job"
+    doc = await db.job_control.find_one({"_id": job_id})
+    running = doc.get("running") if doc else False
+
+    if action == "start":
+        if running:
+            return {"message": "Job already running"}
+
+        await db.job_control.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "start"}},
+            upsert=True,
+        )
+        asyncio.create_task(send_incomplete_cashflows_daily_email(prop_db, db))
         return {"message": "Job started"}
 
     await db.job_control.update_one(

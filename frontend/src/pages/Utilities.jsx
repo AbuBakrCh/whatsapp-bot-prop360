@@ -33,6 +33,7 @@ import GenerateInvoice from './GenerateInvoice'
 import GenerateActivitySummaries from './GenerateActivitySummaries'
 import PropertyActivitySummaries from './PropertyActivitySummaries'
 import IncompleteTimetables from './IncompleteTimetables'
+import IncompleteCashflows from './IncompleteCashflows'
 import MergeContacts from './MergeContacts'
 import JobControl from './JobControl'
 import ExpiryJobsControl from './ExpiryJobsControl'
@@ -78,6 +79,14 @@ const tools = [
     icon: AlertCircle,
     group: 'Messaging',
     render: () => <IncompleteTimetables />,
+  },
+  {
+    id: 'incomplete-cashflows',
+    label: 'Incomplete Cashflows',
+    description: 'Agents missing contact or property on cashflows',
+    icon: AlertCircle,
+    group: 'Messaging',
+    render: () => <IncompleteCashflows />,
   },
   {
     id: 'process-docs',
@@ -171,6 +180,19 @@ const tools = [
       <JobControl
         jobId="incomplete-timetables-email"
         jobName="Incomplete Timetables Daily Email"
+      />
+    ),
+  },
+  {
+    id: 'incomplete-cashflows-email',
+    label: 'Incomplete Cashflows Email',
+    description: 'Daily incomplete cashflow stats to ka@investgreece.gr',
+    icon: Mail,
+    group: 'Jobs',
+    render: () => (
+      <JobControl
+        jobId="incomplete-cashflows-email"
+        jobName="Incomplete Cashflows Daily Email"
       />
     ),
   },

@@ -123,6 +123,49 @@ export async function getIncompleteTimetablesForUser(
   }
 }
 
+export async function getIncompleteCashflows({
+  period = "yesterday",
+  page = 1,
+  pageSize = 20,
+  q = "",
+} = {}) {
+  try {
+    const params = { period, page, page_size: pageSize };
+    if (q && q.trim()) params.q = q.trim();
+    const response = await axios.get(`${BASE}/utilities/incomplete-cashflows`, {
+      params,
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch incomplete cashflows",
+    };
+  }
+}
+
+export async function getIncompleteCashflowsForUser(
+  userId,
+  period = "yesterday"
+) {
+  try {
+    const response = await axios.get(
+      `${BASE}/utilities/incomplete-cashflows/${encodeURIComponent(userId)}`,
+      { params: { period } }
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch user incomplete cashflows",
+    };
+  }
+}
+
 export async function generateClientMessages(date, prompt, merchantId) {
   try {
     const response = await axios.post(`${BASE}/utilities/activity/client-messages`, {
