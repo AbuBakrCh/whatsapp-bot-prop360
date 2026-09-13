@@ -243,7 +243,7 @@ def start_incomplete_cashflows_email_scheduler(prop_db, db):
         send_incomplete_cashflows_daily_email,
         CronTrigger(
             hour=10,
-            minute=35,
+            minute=46,
             timezone=pytz.timezone("Europe/Athens"),
         ),
         args=[prop_db, db],
