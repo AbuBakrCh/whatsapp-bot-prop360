@@ -1453,7 +1453,7 @@ async def incomplete_timetables_list(
 ):
     """
     Agents with incomplete timetable counts (missing contact and/or property).
-    period: yesterday | YYYY-MM (2026) | all
+    period: yesterday | last-2-days | YYYY-MM (2026) | all
     """
     try:
         return await list_incomplete_timetables(
@@ -1498,7 +1498,7 @@ async def incomplete_cashflows_list(
 ):
     """
     Agents with incomplete cashflow counts (missing contact/owner and/or property).
-    period: yesterday | YYYY-MM (2026) | all
+    period: yesterday | last-2-days | YYYY-MM (2026) | all
     Filtered by metadata.createdAt.
     """
     try:

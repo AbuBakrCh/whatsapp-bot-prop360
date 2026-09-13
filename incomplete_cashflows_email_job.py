@@ -1,4 +1,7 @@
-"""Daily email of yesterday's incomplete cashflow stats."""
+"""Daily email of incomplete cashflow stats.
+
+TEMPORARY: period is since-2026-09-07 → today. Revert PERIOD to "yesterday" later.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ import asyncio
 import html
 import logging
 import traceback
-from datetime import datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytz
@@ -33,9 +36,12 @@ GREECE_TZ = ZoneInfo("Europe/Athens")
 JOB_ID = "incomplete_cashflows_email_job"
 EMAIL_LOG_TYPE = "incomplete-cashflows-daily"
 RECIPIENT = "ka@investgreece.gr"
+# TEMPORARY catch-up; revert to "yesterday" later.
+PERIOD = "since-2026-09-07"
+TEMP_RANGE_START = date(2026, 9, 7)
 
 
-async def fetch_all_incomplete_yesterday(prop_db) -> dict:
+async def fetch_all_incomplete_for_period(prop_db) -> dict:
     page = 1
     all_rows: list[dict] = []
     totals = {"contactCount": 0, "propertyCount": 0}
@@ -44,7 +50,7 @@ async def fetch_all_incomplete_yesterday(prop_db) -> dict:
     while True:
         result = await list_incomplete_cashflows(
             prop_db,
-            period="yesterday",
+            period=PERIOD,
             page=page,
             page_size=MAX_PAGE_SIZE,
         )
@@ -67,9 +73,11 @@ async def fetch_all_incomplete_yesterday(prop_db) -> dict:
     }
 
 
-def _yesterday_label() -> str:
-    yesterday = (datetime.now(GREECE_TZ) - timedelta(days=1)).date()
-    return yesterday.strftime("%d %B %Y")
+def _period_label() -> str:
+    today = datetime.now(GREECE_TZ).date()
+    return (
+        f"{TEMP_RANGE_START.strftime('%d %B %Y')} – {today.strftime('%d %B %Y')}"
+    )
 
 
 def format_incomplete_cashflows_email(payload: dict, date_label: str) -> str:
@@ -82,7 +90,7 @@ def format_incomplete_cashflows_email(payload: dict, date_label: str) -> str:
     if not rows:
         table_html = (
             '<p style="margin:16px 0;color:#555;">'
-            "No incomplete cashflows found for this day."
+            "No incomplete cashflows found for this period."
             "</p>"
         )
     else:
@@ -133,7 +141,7 @@ def format_incomplete_cashflows_email(payload: dict, date_label: str) -> str:
   <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
     <div style="background:#1f4e79;color:#ffffff;padding:20px 24px;">
       <h1 style="margin:0;font-size:20px;font-weight:600;">Incomplete Cashflows</h1>
-      <p style="margin:8px 0 0;font-size:14px;opacity:0.9;">Yesterday — {html.escape(date_label)}</p>
+      <p style="margin:8px 0 0;font-size:14px;opacity:0.9;">Since 7 Sep — {html.escape(date_label)}</p>
     </div>
     <div style="padding:24px;">
       <p style="margin:0 0 8px;">
@@ -174,8 +182,9 @@ async def send_incomplete_cashflows_daily_email(prop_db, db):
             logger.info("Job status is stop; skipping send")
             return
 
-        yesterday = (datetime.now(GREECE_TZ) - timedelta(days=1)).date()
-        date_key = yesterday.isoformat()
+        # TEMPORARY dateKey namespace so prior yesterday logs do not block catch-up.
+        today = datetime.now(GREECE_TZ).date()
+        date_key = f"temp-since-2026-09-07-{today.isoformat()}"
 
         existing = await db.email_log.find_one(
             {
@@ -189,8 +198,8 @@ async def send_incomplete_cashflows_daily_email(prop_db, db):
             logger.info("Already sent incomplete cashflows email for %s", date_key)
             return
 
-        payload = await fetch_all_incomplete_yesterday(prop_db)
-        date_label = _yesterday_label()
+        payload = await fetch_all_incomplete_for_period(prop_db)
+        date_label = _period_label()
         subject = f"Incomplete Cashflows — {date_label}"
         body = format_incomplete_cashflows_email(payload, date_label)
 
@@ -233,8 +242,8 @@ def start_incomplete_cashflows_email_scheduler(prop_db, db):
     scheduler.add_job(
         send_incomplete_cashflows_daily_email,
         CronTrigger(
-            hour=10,
-            minute=0,
+            hour=12,
+            minute=15,
             timezone=pytz.timezone("Europe/Athens"),
         ),
         args=[prop_db, db],
