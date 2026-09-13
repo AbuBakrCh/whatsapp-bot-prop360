@@ -242,8 +242,8 @@ def start_incomplete_timetables_email_scheduler(prop_db, db):
     scheduler.add_job(
         send_incomplete_timetables_daily_email,
         CronTrigger(
-            hour=12,
-            minute=16,
+            hour=10,
+            minute=36,
             timezone=pytz.timezone("Europe/Athens"),
         ),
         args=[prop_db, db],
