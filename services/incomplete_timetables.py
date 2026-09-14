@@ -82,21 +82,10 @@ def parse_period(period: str) -> tuple[datetime | None, datetime | None]:
         _, end = greece_day_bounds_utc(end_day)
         return start, end
 
-    # TEMPORARY: catch-up window after missed daily emails; revert jobs to "yesterday".
-    if text == "since-2026-09-07":
-        start_day = date(2026, 9, 7)
-        end_day = now_greece.date()
-        if end_day < start_day:
-            raise ValueError("period since-2026-09-07 cannot end before start")
-        start, _ = greece_day_bounds_utc(start_day)
-        _, end = greece_day_bounds_utc(end_day)
-        return start, end
-
     match = re.fullmatch(r"(\d{4})-(\d{2})", text)
     if not match:
         raise ValueError(
-            "period must be 'yesterday', 'last-2-days', "
-            "'since-2026-09-07', 'all', or 'YYYY-MM'"
+            "period must be 'yesterday', 'last-2-days', 'all', or 'YYYY-MM'"
         )
 
     year = int(match.group(1))
