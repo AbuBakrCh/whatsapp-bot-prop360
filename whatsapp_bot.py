@@ -49,6 +49,10 @@ from incomplete_timetables_email_job import (
     start_incomplete_timetables_email_scheduler,
     send_incomplete_timetables_daily_email,
 )
+from sync_cashflow_refs_job import (
+    start_sync_cashflow_refs_scheduler,
+    run_sync_cashflow_refs_job,
+)
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
 from passport_expiry_job import start_passport_expiry_scheduler
@@ -730,6 +734,7 @@ async def ensure_indexes():
     start_daily_activity_emails_scheduler(prop_db, db)
     start_incomplete_timetables_email_scheduler(prop_db, db)
     start_incomplete_cashflows_email_scheduler(prop_db, db)
+    start_sync_cashflow_refs_scheduler(prop_db, db)
     # Do not block API readiness on a long ownership transfer run.
     asyncio.create_task(transfer_ownership(prop_db))
     start_activity_summary_emails_scheduler(db)
@@ -3392,6 +3397,51 @@ async def control_incomplete_cashflows_email_job(action: str):
         upsert=True,
     )
     return {"message": "Stop signal sent"}
+
+
+@fastapi_app.post("/jobs/sync-cashflow-refs")
+async def control_sync_cashflow_refs_job(action: str):
+    if action not in ["start", "stop"]:
+        return {"error": "action must be start or stop"}
+
+    job_id = "sync_cashflow_refs_job"
+    doc = await db.job_control.find_one({"_id": job_id})
+    running = doc.get("running") if doc else False
+
+    if action == "start":
+        if running:
+            return {"message": "Job already running"}
+
+        await db.job_control.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "start"}},
+            upsert=True,
+        )
+        asyncio.create_task(run_sync_cashflow_refs_job(prop_db, db))
+        return {"message": "Job started"}
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {"$set": {"status": "stop"}},
+        upsert=True,
+    )
+    return {"message": "Stop signal sent"}
+
+
+@fastapi_app.get("/jobs/sync-cashflow-refs")
+async def get_sync_cashflow_refs_job_status():
+    job_id = "sync_cashflow_refs_job"
+    doc = await db.job_control.find_one({"_id": job_id}) or {}
+    finished_at = doc.get("finishedAt")
+    started_at = doc.get("startedAt")
+    return {
+        "running": bool(doc.get("running")),
+        "status": doc.get("status"),
+        "lastResult": doc.get("lastResult"),
+        "lastError": doc.get("lastError"),
+        "startedAt": started_at.isoformat() + "Z" if started_at else None,
+        "finishedAt": finished_at.isoformat() + "Z" if finished_at else None,
+    }
 
 
 @fastapi_app.post("/contacts/merge")

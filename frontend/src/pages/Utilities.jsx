@@ -19,6 +19,7 @@ import {
   Timer,
   AtSign,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
 import SendBulkEmail from './SendBulkEmail'
 import ProcessBankStatementsDrive from './ProcessBankStatementsDrive'
@@ -193,6 +194,21 @@ const tools = [
       <JobControl
         jobId="incomplete-cashflows-email"
         jobName="Incomplete Cashflows Daily Email"
+      />
+    ),
+  },
+  {
+    id: 'sync-cashflow-refs',
+    label: 'Sync Cashflow Refs',
+    description:
+      'Update cashflow property/owner/receiver labels from live titles; clear deleted refs',
+    icon: RefreshCw,
+    group: 'Jobs',
+    render: () => (
+      <JobControl
+        jobId="sync-cashflow-refs"
+        jobName="Sync Cashflow Property/Contact Refs"
+        pollStatus
       />
     ),
   },
