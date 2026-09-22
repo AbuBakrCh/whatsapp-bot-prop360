@@ -85,7 +85,7 @@ def start_sync_timetable_refs_scheduler(prop_db, db):
     scheduler.add_job(
         run_sync_timetable_refs_job,
         CronTrigger(
-            hour=9,
+            hour=5,
             minute=12,
             timezone=pytz.timezone("Europe/Athens"),
         ),

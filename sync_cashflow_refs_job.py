@@ -85,8 +85,8 @@ def start_sync_cashflow_refs_scheduler(prop_db, db):
     scheduler.add_job(
         run_sync_cashflow_refs_job,
         CronTrigger(
-            hour=8,
-            minute=55,
+            hour=4,
+            minute=40,
             timezone=pytz.timezone("Europe/Athens"),
         ),
         args=[prop_db, db],
