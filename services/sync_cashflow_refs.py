@@ -1,10 +1,10 @@
-"""Sync denormalized property/contact labels on cashflow formdatas."""
+"""Sync denormalized property/contact Label|pid fields on formdatas."""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Sequence
 
 from services.ledger_report import (
     CASHFLOW_INDICATOR,
@@ -15,7 +15,7 @@ from services.ledger_report import (
     normalize_property_field,
 )
 
-logger = logging.getLogger("sync_cashflow_refs")
+logger = logging.getLogger("sync_piped_refs")
 
 FIELD_TRX_RECEIVER = "field-1758478869002-dpm43pot3"
 CONTACT_NAME_FIELD = "field-1741774547654-ngd30kdcz"
@@ -24,7 +24,10 @@ JOB_ID = "sync_cashflow_refs_job"
 PAGE_SIZE = 200
 STOP_CHECK_EVERY = 50
 
-REF_SPECS: tuple[tuple[str, str, str], ...] = (
+# (cashflow_field, source_indicator, source_label_field)
+RefSpec = tuple[str, str, str]
+
+REF_SPECS: tuple[RefSpec, ...] = (
     (FIELD_PROPERTY, "properties", PROPERTY_TITLE_FIELD),
     (FIELD_CASHFLOW_CONTACT, "contacts", CONTACT_NAME_FIELD),
     (FIELD_TRX_RECEIVER, "contacts", CONTACT_NAME_FIELD),
@@ -54,7 +57,9 @@ def _build_piped(label: str, pid: str) -> str:
     return f"{label}|{pid}"
 
 
-def _lookup_label(label_by_pid: dict[str, str | None], pid: str) -> tuple[bool, str | None]:
+def _lookup_label(
+    label_by_pid: dict[str, str | None], pid: str
+) -> tuple[bool, str | None]:
     """Return (found, label). found=False means source missing/inactive."""
     if pid in label_by_pid:
         return True, label_by_pid[pid]
@@ -89,7 +94,7 @@ def _desired_value(
         return "", "clear"
 
     if not label:
-        # Active source exists but has no title/name — leave cashflow as-is
+        # Active source exists but has no title/name — leave field as-is
         return None, "skip"
 
     desired = _build_piped(label, pid)
@@ -98,8 +103,8 @@ def _desired_value(
     return desired, "update"
 
 
-async def _should_stop(db) -> bool:
-    control = await db.job_control.find_one({"_id": JOB_ID})
+async def _should_stop(db, job_id: str) -> bool:
+    control = await db.job_control.find_one({"_id": job_id})
     return bool(control and control.get("status") == "stop")
 
 
@@ -151,10 +156,18 @@ async def _load_labels(
     return labels
 
 
-async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
+async def sync_piped_refs(
+    prop_db,
+    db,
+    *,
+    job_id: str,
+    indicator: str,
+    ref_specs: Sequence[RefSpec],
+    log_name: str | None = None,
+) -> dict[str, int]:
     """
-    Rewrite cashflow Property / Property Owner / Trx Receiver labels from live
-    property/contact docs. Clear the field when the source is missing or inactive.
+    Rewrite Label|pid fields on formdatas from live property/contact docs.
+    Clear the field when the source is missing or inactive.
     """
     stats = {
         "scanned": 0,
@@ -163,11 +176,21 @@ async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
         "skipped": 0,
         "stopped": 0,
     }
+    name = log_name or indicator
 
     formdatas = prop_db.formdatas
-    field_paths = [f"data.{field}" for field, _, _ in REF_SPECS]
+    field_paths = [f"data.{field}" for field, _, _ in ref_specs]
+    # Distinct source label fields for properties vs contacts
+    property_label_field = PROPERTY_TITLE_FIELD
+    contact_label_field = CONTACT_NAME_FIELD
+    for _, source_indicator, label_field in ref_specs:
+        if source_indicator == "properties":
+            property_label_field = label_field
+        elif source_indicator == "contacts":
+            contact_label_field = label_field
+
     query = {
-        "indicator": CASHFLOW_INDICATOR,
+        "indicator": indicator,
         "status": "active",
         "$or": [
             {path: {"$exists": True, "$nin": [None, ""]}} for path in field_paths
@@ -194,20 +217,20 @@ async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
 
         for doc in docs:
             data = doc.get("data") or {}
-            for field, indicator, _ in REF_SPECS:
+            for field, source_indicator, _ in ref_specs:
                 pid = extract_piped_id(data.get(field))
                 if not pid:
                     continue
-                if indicator == "properties":
+                if source_indicator == "properties":
                     property_pids.add(pid)
                 else:
                     contact_pids.add(pid)
 
         property_labels = await _load_labels(
-            prop_db, "properties", PROPERTY_TITLE_FIELD, property_pids
+            prop_db, "properties", property_label_field, property_pids
         )
         contact_labels = await _load_labels(
-            prop_db, "contacts", CONTACT_NAME_FIELD, contact_pids
+            prop_db, "contacts", contact_label_field, contact_pids
         )
 
         labels_by_indicator = {
@@ -218,7 +241,7 @@ async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
         for doc in docs:
             if processed_since_stop_check >= STOP_CHECK_EVERY:
                 processed_since_stop_check = 0
-                if await _should_stop(db):
+                if await _should_stop(db, job_id):
                     stats["stopped"] = 1
                     return False
 
@@ -227,12 +250,12 @@ async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
             data = doc.get("data") or {}
             sets: dict[str, Any] = {}
 
-            for field, indicator, _ in REF_SPECS:
+            for field, source_indicator, _ in ref_specs:
                 current = data.get(field)
                 if not normalize_property_field(current):
                     continue
                 new_value, action = _desired_value(
-                    current, labels_by_indicator[indicator]
+                    current, labels_by_indicator[source_indicator]
                 )
                 if action == "skip" or new_value is None:
                     stats["skipped"] += 1
@@ -255,17 +278,18 @@ async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
         batch.append(doc)
         if len(batch) >= PAGE_SIZE:
             if not await flush_batch(batch):
-                logger.info("Stop signal received during sync_cashflow_refs")
+                logger.info("Stop signal received during %s sync", name)
                 return stats
             batch = []
 
     if batch:
         if not await flush_batch(batch):
-            logger.info("Stop signal received during sync_cashflow_refs")
+            logger.info("Stop signal received during %s sync", name)
             return stats
 
     logger.info(
-        "sync_cashflow_refs done | scanned=%s updated=%s cleared=%s skipped=%s stopped=%s",
+        "%s sync done | scanned=%s updated=%s cleared=%s skipped=%s stopped=%s",
+        name,
         stats["scanned"],
         stats["updated"],
         stats["cleared"],
@@ -273,3 +297,18 @@ async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
         stats["stopped"],
     )
     return stats
+
+
+async def sync_cashflow_refs(prop_db, db) -> dict[str, int]:
+    """
+    Rewrite cashflow Property / Property Owner / Trx Receiver labels from live
+    property/contact docs. Clear the field when the source is missing or inactive.
+    """
+    return await sync_piped_refs(
+        prop_db,
+        db,
+        job_id=JOB_ID,
+        indicator=CASHFLOW_INDICATOR,
+        ref_specs=REF_SPECS,
+        log_name="sync_cashflow_refs",
+    )

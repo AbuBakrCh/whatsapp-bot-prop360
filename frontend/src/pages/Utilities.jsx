@@ -213,6 +213,21 @@ const tools = [
     ),
   },
   {
+    id: 'sync-timetable-refs',
+    label: 'Sync Timetable Refs',
+    description:
+      'Update timetable property/contact labels from live titles; clear deleted refs',
+    icon: RefreshCw,
+    group: 'Jobs',
+    render: () => (
+      <JobControl
+        jobId="sync-timetable-refs"
+        jobName="Sync Timetable Property/Contact Refs"
+        pollStatus
+      />
+    ),
+  },
+  {
     id: 'expiry-jobs',
     label: 'Expiry Jobs',
     description: 'Schedule and review expiry jobs',
