@@ -1323,7 +1323,7 @@ async def extract_cashflow_from_document(
 ):
     """
     Extract Prop360 cashflow `data` fields from a bill document (PDF/image).
-    Currently supports: electricity_bill, common_expenses, water_bill, bank_receipt, invoice
+    Currently supports: electricity_bill, common_expenses, water_bill, bank_receipt, invoice, e_paravolo
 
     For invoices, also ensures the issuer contact exists (create if missing).
     Contact match/create failures never block the cashflow extraction response.

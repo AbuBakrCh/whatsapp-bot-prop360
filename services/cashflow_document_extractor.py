@@ -21,6 +21,7 @@ DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
 DOCUMENT_TYPE_WATER_BILL = "Water Bill"
 DOCUMENT_TYPE_BANK_RECEIPT = "Bank Transaction"
 DOCUMENT_TYPE_INVOICE = "Invoice"
+DOCUMENT_TYPE_E_PARAVOLO = "E-Paravolo"
 
 SUPPORTED_DOCUMENT_TYPES = {
     "electricity_bill": DOCUMENT_TYPE_ELECTRICITY_BILL,
@@ -38,6 +39,10 @@ SUPPORTED_DOCUMENT_TYPES = {
     "bank_transaction": DOCUMENT_TYPE_BANK_RECEIPT,
     "bank transaction": DOCUMENT_TYPE_BANK_RECEIPT,
     "invoice": DOCUMENT_TYPE_INVOICE,
+    "e_paravolo": DOCUMENT_TYPE_E_PARAVOLO,
+    "e-paravolo": DOCUMENT_TYPE_E_PARAVOLO,
+    "e paravolo": DOCUMENT_TYPE_E_PARAVOLO,
+    "paravolo": DOCUMENT_TYPE_E_PARAVOLO,
 }
 
 # Prop360 field IDs — electricity bill cashflow entries
@@ -77,6 +82,10 @@ FIELD_INVEST_GREECE_NOTES = "field-1757605632930-2hfg96qgr"
 FIELD_MONTH = "field-1759392145178-qbx06ungl"
 FIELD_YEAR = "field-1759392151218-bmx5iidn6"
 FIELD_PAYMENT_DIRECTION = "field-1783088283028-kwkardhwn"
+
+# Prop360 field IDs — e-paravolo cashflow entries
+FIELD_E_PARAVOLO_ISSUER = "field-1786307267541-71oa4apc6"
+FIELD_ADMINISTRATIVE_FEE_CODE = "field-1786302580295-5cl7ep8zr"
 
 # Prop360 field IDs — invoice cashflow entries
 FIELD_TRX_PAYER = "field-1758478123620-9ztb0q9sq"
@@ -310,6 +319,42 @@ BANK_RECEIPT_EXTRACTION_SCHEMA = {
     ),
 }
 
+E_PARAVOLO_EXTRACTION_SCHEMA = {
+    "total_amount": (
+        "Fee / παράβολο amount payable in euros. Look for labels such as "
+        "Ποσό, Ποσό Παραβόλου, Amount, Fee Amount, Σύνολο. "
+        "Numeric string with dot decimal. Leave empty if not found."
+    ),
+    "trx_date": (
+        "Transaction / issue / payment date of the e-paravolo. "
+        "Return as YYYY-MM-DD only (ignore time of day)."
+    ),
+    "trx_ref_no": (
+        "Unique transaction / payment / reference number. Look for labels such as "
+        "Αριθμός Συναλλαγής, Transaction Reference, Reference No, Κωδικός Πληρωμής "
+        "(when distinct from RF). Preserve as printed. Leave empty if not found."
+    ),
+    "issuer": (
+        "Issuing authority / agency / body that issued the e-paravolo "
+        "(e.g. ministry, municipality, tax office, public service). "
+        "Return the name as printed. Leave empty if not found."
+    ),
+    "administrative_fee_code": (
+        "Administrative fee / παράβολο / document code (Doc No). "
+        "Look for labels such as Κωδικός Παραβόλου, Κωδικός Τύπου Παραβόλου, "
+        "Administrative Fee Code, Paravolo Code, Document No, Doc No. "
+        "Leave empty if not found."
+    ),
+    "rf_payment_code": (
+        "RF / Rf payment code for bank payment. Look for labels such as "
+        "Κωδικός Πληρωμής RF, RF Code, Payment Code, RF. Leave empty if not found."
+    ),
+    "invest_greece_notes": (
+        "Any relevant notes, description of the fee purpose, remarks, or "
+        "extra reference text from the document. Leave empty if none."
+    ),
+}
+
 INVOICE_EXTRACTION_SCHEMA = {
     "trx_payer": (
         "Who is the payer of this invoice transaction. Must be exactly one of: "
@@ -419,6 +464,8 @@ def normalize_document_type(document_type: str) -> str | None:
         return DOCUMENT_TYPE_BANK_RECEIPT
     if document_type.strip() == DOCUMENT_TYPE_INVOICE:
         return DOCUMENT_TYPE_INVOICE
+    if document_type.strip() == DOCUMENT_TYPE_E_PARAVOLO:
+        return DOCUMENT_TYPE_E_PARAVOLO
     return None
 
 
@@ -866,6 +913,29 @@ def _extract_invoice_with_gemini(
     )
 
 
+def _extract_e_paravolo_with_gemini(
+    file_bytes: bytes, filename: str | None = None
+) -> dict[str, Any]:
+    return _extract_with_gemini(
+        file_bytes,
+        filename=filename,
+        schema=E_PARAVOLO_EXTRACTION_SCHEMA,
+        document_description=(
+            "Greek e-Paravolo (ηλεκτρονικό παράβολο) administrative fee receipts "
+            "and payment confirmations from gov.gr or related public services, "
+            "in any layout, language (Greek or English), or format"
+        ),
+        extra_rules="""
+- Templates vary — extract by meaning, not by layout or coordinates.
+- Do NOT assume a specific ministry or template.
+- trx_date must be YYYY-MM-DD (date only, no time).
+- administrative_fee_code is the παράβολο / fee type / document code, not the RF code.
+- rf_payment_code is the bank RF payment identifier when present.
+- issuer is the public authority/agency, not a private company unless printed as such.
+""",
+    )
+
+
 def build_electricity_bill_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     provider = _normalize_provider(extracted.get("who_gets_money", ""))
     matching_number = (extracted.get("matching_number") or "").strip()
@@ -1112,6 +1182,38 @@ def build_invoice_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
     return _omit_unextracted_fields(data)
 
 
+def build_e_paravolo_cashflow_data(extracted: dict[str, Any]) -> dict[str, Any]:
+    total_amount = _parse_amount_optional(extracted.get("total_amount"))
+    trx_date = _to_iso_due_date(extracted.get("trx_date", ""))
+    trx_ref = (extracted.get("trx_ref_no") or "").strip()
+    issuer = (extracted.get("issuer") or "").strip()
+    fee_code = (extracted.get("administrative_fee_code") or "").strip()
+    rf_code = (extracted.get("rf_payment_code") or "").strip()
+    notes = (extracted.get("invest_greece_notes") or "").strip()
+
+    data: dict[str, Any] = {
+        FIELD_DOCUMENT_TYPE: DOCUMENT_TYPE_E_PARAVOLO,
+        FIELD_CATEGORY: "Accrual",
+    }
+
+    if total_amount is not None:
+        data[FIELD_TOTAL_AMOUNT] = total_amount
+    if notes:
+        data[FIELD_INVEST_GREECE_NOTES] = notes
+    if trx_date:
+        data[FIELD_TRX_DATE] = trx_date
+    if trx_ref:
+        data[FIELD_TRX_REF_NO] = trx_ref
+    if issuer:
+        data[FIELD_E_PARAVOLO_ISSUER] = issuer
+    if fee_code:
+        data[FIELD_ADMINISTRATIVE_FEE_CODE] = fee_code
+    if rf_code:
+        data[FIELD_RF_PAYMENT_CODE] = rf_code
+
+    return _omit_unextracted_fields(data)
+
+
 def extract_cashflow_data_from_document(
     file_bytes: bytes,
     *,
@@ -1145,5 +1247,9 @@ def extract_cashflow_data_from_document(
     if normalized == DOCUMENT_TYPE_INVOICE:
         extracted = _extract_invoice_with_gemini(file_bytes, filename)
         return build_invoice_cashflow_data(extracted)
+
+    if normalized == DOCUMENT_TYPE_E_PARAVOLO:
+        extracted = _extract_e_paravolo_with_gemini(file_bytes, filename)
+        return build_e_paravolo_cashflow_data(extracted)
 
     raise ValueError(f"Document type '{document_type}' is not supported.")
