@@ -413,6 +413,15 @@ INVOICE_EXTRACTION_SCHEMA = {
     "invoice_issuer_tax_id": (
         "Issuer Α.Φ.Μ. (AFM / Tax Number) exactly as printed. Leave empty if not found."
     ),
+    "issuer_email": (
+        "Issuer company email address as printed on the invoice (near issuer header / "
+        "contact block). Copy exactly as printed. Leave empty if not found."
+    ),
+    "issuer_phone": (
+        "Issuer company telephone / mobile number as printed on the invoice (near issuer "
+        "header / contact block). Keep digits and leading + if present; do not invent. "
+        "Leave empty if not found."
+    ),
     "invoice_recipient_tax_id": (
         "Recipient tax ID / Α.Φ.Μ. / VAT number. Leave empty if not found."
     ),
@@ -904,6 +913,7 @@ def _extract_invoice_with_gemini(
   NEVER remove periods from abbreviations or initials.
   Wrong: "ΖΑΧΟΣ Α ΣΙΑ ΟΕ". Correct: "ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.".
 - issuer_profession is the επάγγελμα / activity near the issuer header (not line items).
+- issuer_email and issuer_phone are the issuer's own contact details (not the recipient/bill-to).
 - trx_payer must be exactly "Customer" or "Invest Greece" (or empty).
 - invoice_source must be exactly "Solomon Invoice" or "Third Party Invoice" (or empty).
 - trx_payment_method must be exactly "In Person" or "Bank" (or empty).

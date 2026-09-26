@@ -36,9 +36,11 @@ export default function CreateContactFromInvoice() {
   const matchedByLabel =
     result?.matchedBy === "tax_number"
       ? "Tax Number / AFM"
-      : result?.matchedBy === "name"
-        ? "Company name"
-        : null;
+      : result?.matchedBy === "email"
+        ? "Email"
+        : result?.matchedBy === "phone"
+          ? "Telephone"
+          : null;
 
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
@@ -47,7 +49,8 @@ export default function CreateContactFromInvoice() {
       </h2>
       <p className="text-sm text-slate-600 mb-6">
         Upload a PDF or image invoice. The issuer is matched by Tax Number/AFM
-        first, then company name. A new contact is created only if none exists.
+        first, then email, then telephone. A new contact is created only if none
+        exists.
       </p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 mb-6">
@@ -108,6 +111,18 @@ export default function CreateContactFromInvoice() {
               <dt className="text-slate-500">Tax Number / AFM</dt>
               <dd className="font-medium">
                 {result.extracted?.taxId || result.contact?.taxNumber || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Email</dt>
+              <dd className="font-medium">
+                {result.extracted?.email || result.contact?.email || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Telephone</dt>
+              <dd className="font-medium">
+                {result.extracted?.phone || result.contact?.phone || "—"}
               </dd>
             </div>
             <div>

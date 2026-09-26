@@ -1379,7 +1379,12 @@ async def _ensure_invoice_issuer_contact_best_effort(
         if not tax_id and not issuer:
             return None
 
-        existing, matched_by = await find_existing_contact(prop_db, tax_id, issuer)
+        existing, matched_by = await find_existing_contact(
+            prop_db,
+            tax_id=tax_id,
+            email=issuer_fields.get("email") or "",
+            phone=issuer_fields.get("phone") or "",
+        )
         if existing:
             return serialize_contact_result(
                 status="existing",
@@ -1405,8 +1410,8 @@ async def _ensure_invoice_issuer_contact_best_effort(
 @fastapi_app.post("/contacts/from-invoice")
 async def create_contact_from_invoice(file: UploadFile = File(...)):
     """
-    Extract invoice issuer details, match an existing contact by AFM/Tax Number
-    (then company name), and create a Prop360 contact only when none exists.
+    Extract invoice issuer details, match an existing contact by AFM/Tax Number,
+    then email, then phone, and create a Prop360 contact only when none exists.
     """
     try:
         file_bytes = await file.read()
@@ -1423,7 +1428,12 @@ async def create_contact_from_invoice(file: UploadFile = File(...)):
                 detail="Could not identify invoice issuer (no tax ID or company name found)",
             )
 
-        existing, matched_by = await find_existing_contact(prop_db, tax_id, issuer)
+        existing, matched_by = await find_existing_contact(
+            prop_db,
+            tax_id=tax_id,
+            email=extracted.get("email") or "",
+            phone=extracted.get("phone") or "",
+        )
         if existing:
             contact_id = str(existing.get("_id"))
             return serialize_contact_result(
