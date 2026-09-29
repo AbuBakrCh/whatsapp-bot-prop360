@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   getOperatorActivity,
   getOperatorActivityDetail,
@@ -98,6 +99,15 @@ export default function OperatorActivity() {
     setModalEvents([]);
     setModalError("");
   };
+
+  useEffect(() => {
+    if (!modalOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [modalOpen]);
 
   const top = summary?.topOperator;
 
@@ -293,90 +303,97 @@ export default function OperatorActivity() {
         </p>
       ) : null}
 
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[85vh] flex flex-col relative">
-            <button
-              type="button"
+      {modalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="absolute inset-0"
               onClick={closeModal}
-              className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 text-xl leading-none"
-              aria-label="Close"
-            >
-              ×
-            </button>
-            <div className="p-5 border-b border-slate-200 pr-10">
-              <h3 className="text-lg font-semibold text-gray-800">
-                {modalOperator?.displayName || "Operator"}
-              </h3>
-              {modalOperator?.email ? (
-                <p className="text-sm text-gray-500">{modalOperator.email}</p>
-              ) : null}
-              <p className="text-sm text-slate-600 mt-1">
-                {modalOperator?.durationLabel || "0m"} active
-                {typeof modalOperator?.loginCount === "number"
-                  ? ` · ${modalOperator.loginCount} logins`
-                  : ""}
-                {period?.label ? ` · ${period.label}` : ""}
-              </p>
-            </div>
-            <div className="p-5 overflow-y-auto">
-              {modalLoading ? (
-                <p className="text-gray-500">Loading...</p>
-              ) : modalError ? (
-                <p className="text-sm text-red-600">{modalError}</p>
-              ) : modalEvents.length === 0 ? (
-                <p className="text-gray-500">
-                  No session events in this period.
+              aria-hidden="true"
+            />
+            <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-lg">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="absolute top-3 right-3 text-xl leading-none text-gray-500 hover:text-gray-800"
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <div className="border-b border-slate-200 p-5 pr-10">
+                <h3 className="text-lg font-semibold text-gray-800">
+                  {modalOperator?.displayName || "Operator"}
+                </h3>
+                {modalOperator?.email ? (
+                  <p className="text-sm text-gray-500">{modalOperator.email}</p>
+                ) : null}
+                <p className="mt-1 text-sm text-slate-600">
+                  {modalOperator?.durationLabel || "0m"} active
+                  {typeof modalOperator?.loginCount === "number"
+                    ? ` · ${modalOperator.loginCount} logins`
+                    : ""}
+                  {period?.label ? ` · ${period.label}` : ""}
                 </p>
-              ) : (
-                <ul className="space-y-3">
-                  {modalEvents.map((ev) => (
-                    <li
-                      key={ev.id}
-                      className="border border-slate-200 rounded-lg px-3 py-2"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <span
-                            className={`inline-block text-xs font-semibold px-2 py-0.5 rounded ${
-                              ev.action === "login"
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}
-                          >
-                            {ev.action}
-                          </span>
-                          <div className="text-sm text-gray-800 mt-1">
-                            {ev.description || "—"}
+              </div>
+              <div className="overflow-y-auto p-5">
+                {modalLoading ? (
+                  <p className="text-gray-500">Loading...</p>
+                ) : modalError ? (
+                  <p className="text-sm text-red-600">{modalError}</p>
+                ) : modalEvents.length === 0 ? (
+                  <p className="text-gray-500">
+                    No session events in this period.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {modalEvents.map((ev) => (
+                      <li
+                        key={ev.id}
+                        className="rounded-lg border border-slate-200 px-3 py-2"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <span
+                              className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
+                                ev.action === "login"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-blue-100 text-blue-800"
+                              }`}
+                            >
+                              {ev.action}
+                            </span>
+                            <div className="mt-1 text-sm text-gray-800">
+                              {ev.description || "—"}
+                            </div>
+                            {ev.activeMinutes != null ? (
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                {ev.activeMinutes} minutes
+                              </div>
+                            ) : null}
+                            {ev.ip ? (
+                              <div className="mt-0.5 text-xs text-slate-400">
+                                IP {ev.ip}
+                              </div>
+                            ) : null}
                           </div>
-                          {ev.activeMinutes != null ? (
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              {ev.activeMinutes} minutes
-                            </div>
-                          ) : null}
-                          {ev.ip ? (
-                            <div className="text-xs text-slate-400 mt-0.5">
-                              IP {ev.ip}
-                            </div>
-                          ) : null}
+                          <div className="whitespace-nowrap text-right text-xs text-slate-500">
+                            {ev.createdAtLabel || ev.createdAt || "—"}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500 whitespace-nowrap text-right">
-                          {ev.createdAtLabel || ev.createdAt || "—"}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {modalTruncated ? (
-                <p className="text-xs text-amber-700 mt-3">
-                  Showing the most recent 500 events only.
-                </p>
-              ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {modalTruncated ? (
+                  <p className="mt-3 text-xs text-amber-700">
+                    Showing the most recent 500 events only.
+                  </p>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
