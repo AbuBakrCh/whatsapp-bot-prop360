@@ -96,7 +96,7 @@ const tools = [
     label: 'Operator Activity',
     description: 'Active time rankings by day, week, or month',
     icon: Activity,
-    group: 'Messaging',
+    group: 'Analytics',
     render: () => <OperatorActivity />,
   },
   {
@@ -268,7 +268,7 @@ const tools = [
   },
 ]
 
-const groups = ['Messaging', 'Data', 'Finance', 'Jobs']
+const groups = ['Messaging', 'Analytics', 'Data', 'Finance', 'Jobs']
 
 function Atmosphere() {
   return (

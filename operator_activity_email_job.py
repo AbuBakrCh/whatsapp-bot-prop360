@@ -122,9 +122,7 @@ def format_operator_activity_email(payload: dict) -> str:
     </div>
     <div style="padding:24px;">
       <p style="margin:0 0 16px;color:#555;font-size:13px;">
-        Session active time from Prop360 activity records
-        (<code>module=session</code>, <code>action=active</code>).
-        Times shown in Greece timezone; stored timestamps are UTC.
+        Timezone shown in Greece timezone.
       </p>
       <table style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 8px;">
         <tr>

@@ -109,7 +109,7 @@ export default function OperatorActivity() {
             Operator Activity
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Session active time for all active users · Europe/Athens
+            Timezone shown in Greece timezone.
           </p>
           {period?.label ? (
             <p className="text-sm text-slate-600 mt-1 font-medium">
