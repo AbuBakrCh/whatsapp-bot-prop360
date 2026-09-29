@@ -49,6 +49,10 @@ from incomplete_timetables_email_job import (
     start_incomplete_timetables_email_scheduler,
     send_incomplete_timetables_daily_email,
 )
+from operator_activity_email_job import (
+    start_operator_activity_email_scheduler,
+    send_operator_activity_daily_email,
+)
 from sync_cashflow_refs_job import (
     start_sync_cashflow_refs_scheduler,
     run_sync_cashflow_refs_job,
@@ -77,6 +81,10 @@ from services.incomplete_timetables import (
     DEFAULT_PAGE_SIZE as INCOMPLETE_TT_PAGE_SIZE,
     get_incomplete_timetables_for_user,
     list_incomplete_timetables,
+)
+from services.operator_activity import (
+    get_operator_activity_detail,
+    get_operator_activity_report,
 )
 from services.accrual_payment_matching import fetch_accrual_payment_matches
 from services.cashflow_document_extractor import (
@@ -738,6 +746,7 @@ async def ensure_indexes():
     start_daily_activity_emails_scheduler(prop_db, db)
     start_incomplete_timetables_email_scheduler(prop_db, db)
     start_incomplete_cashflows_email_scheduler(prop_db, db)
+    start_operator_activity_email_scheduler(prop_db, db)
     start_sync_cashflow_refs_scheduler(prop_db, db)
     start_sync_timetable_refs_scheduler(prop_db, db)
     # Do not block API readiness on a long ownership transfer run.
@@ -1547,6 +1556,51 @@ async def incomplete_cashflows_detail(
             prop_db,
             user_id,
             period=period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.get("/utilities/operator-activity")
+async def operator_activity_list(
+    view: str = Query("day"),
+    date: str | None = Query(None),
+):
+    """
+    Rank active users by session active minutes for a Greece-local period.
+    view: day | week | month
+    date: YYYY-MM-DD anchor (defaults to today in Europe/Athens)
+    """
+    try:
+        return await get_operator_activity_report(
+            prop_db,
+            view=view,
+            date_str=date,
+            end_at_now=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@fastapi_app.get("/utilities/operator-activity/{firebase_id}")
+async def operator_activity_detail(
+    firebase_id: str,
+    view: str = Query("day"),
+    date: str | None = Query(None),
+):
+    """Session activity timeline for one operator (Greece-local timestamps)."""
+    try:
+        return await get_operator_activity_detail(
+            prop_db,
+            firebase_id,
+            view=view,
+            date_str=date,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3404,6 +3458,35 @@ async def control_incomplete_cashflows_email_job(action: str):
             upsert=True,
         )
         asyncio.create_task(send_incomplete_cashflows_daily_email(prop_db, db))
+        return {"message": "Job started"}
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {"$set": {"status": "stop"}},
+        upsert=True,
+    )
+    return {"message": "Stop signal sent"}
+
+
+@fastapi_app.post("/jobs/operator-activity-email")
+async def control_operator_activity_email_job(action: str):
+    if action not in ["start", "stop"]:
+        return {"error": "action must be start or stop"}
+
+    job_id = "operator_activity_email_job"
+    doc = await db.job_control.find_one({"_id": job_id})
+    running = doc.get("running") if doc else False
+
+    if action == "start":
+        if running:
+            return {"message": "Job already running"}
+
+        await db.job_control.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "start"}},
+            upsert=True,
+        )
+        asyncio.create_task(send_operator_activity_daily_email(prop_db, db))
         return {"message": "Job started"}
 
     await db.job_control.update_one(

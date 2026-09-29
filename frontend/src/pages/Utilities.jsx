@@ -20,6 +20,7 @@ import {
   AtSign,
   AlertCircle,
   RefreshCw,
+  Activity,
 } from 'lucide-react'
 import SendBulkEmail from './SendBulkEmail'
 import ProcessBankStatementsDrive from './ProcessBankStatementsDrive'
@@ -35,6 +36,7 @@ import GenerateActivitySummaries from './GenerateActivitySummaries'
 import PropertyActivitySummaries from './PropertyActivitySummaries'
 import IncompleteTimetables from './IncompleteTimetables'
 import IncompleteCashflows from './IncompleteCashflows'
+import OperatorActivity from './OperatorActivity'
 import MergeContacts from './MergeContacts'
 import JobControl from './JobControl'
 import ExpiryJobsControl from './ExpiryJobsControl'
@@ -88,6 +90,14 @@ const tools = [
     icon: AlertCircle,
     group: 'Messaging',
     render: () => <IncompleteCashflows />,
+  },
+  {
+    id: 'operator-activity',
+    label: 'Operator Activity',
+    description: 'Active time rankings by day, week, or month',
+    icon: Activity,
+    group: 'Messaging',
+    render: () => <OperatorActivity />,
   },
   {
     id: 'process-docs',
@@ -194,6 +204,19 @@ const tools = [
       <JobControl
         jobId="incomplete-cashflows-email"
         jobName="Incomplete Cashflows Daily Email"
+      />
+    ),
+  },
+  {
+    id: 'operator-activity-email',
+    label: 'Operator Activity Email',
+    description: 'Daily operator active-time report to ka@investgreece.gr',
+    icon: Mail,
+    group: 'Jobs',
+    render: () => (
+      <JobControl
+        jobId="operator-activity-email"
+        jobName="Operator Activity Daily Email"
       />
     ),
   },

@@ -166,6 +166,46 @@ export async function getIncompleteCashflowsForUser(
   }
 }
 
+export async function getOperatorActivity({ view = "day", date } = {}) {
+  try {
+    const params = { view };
+    if (date) params.date = date;
+    const response = await axios.get(`${BASE}/utilities/operator-activity`, {
+      params,
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch operator activity",
+    };
+  }
+}
+
+export async function getOperatorActivityDetail(
+  firebaseId,
+  { view = "day", date } = {}
+) {
+  try {
+    const params = { view };
+    if (date) params.date = date;
+    const response = await axios.get(
+      `${BASE}/utilities/operator-activity/${encodeURIComponent(firebaseId)}`,
+      { params }
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to fetch operator activity detail",
+    };
+  }
+}
+
 export async function generateClientMessages(date, prompt, merchantId) {
   try {
     const response = await axios.post(`${BASE}/utilities/activity/client-messages`, {
