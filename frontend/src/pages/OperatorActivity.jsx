@@ -1,4 +1,4 @@
-Utilities.jsximport React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getOperatorActivity,
   getOperatorActivityDetail,
