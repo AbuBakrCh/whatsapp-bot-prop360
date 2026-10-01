@@ -34,7 +34,17 @@ if not logger.handlers:
 
 JOB_ID = "operator_activity_email_job"
 EMAIL_LOG_TYPE = "operator-activity-daily"
+EMAIL_LOG_TYPE_PERSONAL = "operator-activity-personal"
 RECIPIENT = "ka@investgreece.gr"
+OPERATOR_SEND_DELAY_SECONDS = 1.5
+PERSONAL_CC = ["ka@investgreece.gr"]
+
+
+def _first_name(display_name: str | None) -> str:
+    text = (display_name or "").strip()
+    if not text:
+        return "there"
+    return text.split()[0]
 
 
 def format_operator_activity_email(payload: dict) -> str:
@@ -148,6 +158,132 @@ def format_operator_activity_email(payload: dict) -> str:
 </html>"""
 
 
+def format_personal_operator_email(row: dict, period_label: str) -> str:
+    """Polite personal summary — own activity only, no team rankings."""
+    name = html.escape(_first_name(row.get("displayName")))
+    date_label = html.escape(period_label)
+    duration = html.escape(str(row.get("durationLabel") or format_duration(0)))
+    logins = int(row.get("loginCount") or 0)
+    last_label = html.escape(str(row.get("lastActivityLabel") or "—"))
+    active_events = int(row.get("activeEventCount") or 0)
+
+    return f"""<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,Helvetica,sans-serif;color:#333;line-height:1.5;margin:0;padding:20px;background:#f4f4f4;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#1f4e79;color:#ffffff;padding:20px 24px;">
+      <h1 style="margin:0;font-size:20px;font-weight:600;">Your daily activity summary</h1>
+      <p style="margin:8px 0 0;font-size:14px;opacity:0.9;">{date_label}</p>
+    </div>
+    <div style="padding:24px;">
+      <p style="margin:0 0 12px;">Hi {name},</p>
+      <p style="margin:0 0 16px;color:#555;">
+        Thank you for your work today. Here is a short summary of your
+        Prop360 activity for this day.
+      </p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 16px;">
+        <tr>
+          <td style="padding:12px 14px;background:#f3f4f6;border-radius:8px 8px 0 0;">
+            <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em;">Active time</div>
+            <div style="font-size:22px;font-weight:700;color:#1f4e79;margin-top:4px;">{duration}</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 14px;border-bottom:1px solid #eee;">
+            <span style="color:#6b7280;">Logins</span>
+            <span style="float:right;font-weight:600;">{logins}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 14px;border-bottom:1px solid #eee;">
+            <span style="color:#6b7280;">Activity check-ins</span>
+            <span style="float:right;font-weight:600;">{active_events}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 14px;">
+            <span style="color:#6b7280;">Last activity</span>
+            <span style="float:right;font-weight:600;">{last_label}</span>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;color:#777;font-size:12px;">
+        Timezone shown in Greece timezone.
+      </p>
+      <p style="margin:16px 0 0;color:#555;">
+        Kind regards,<br>Prop360
+      </p>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+def _operator_recipients(rankings: list[dict]) -> list[dict]:
+    """Operators with activity and a sendable email (excludes Kostas summary recipient)."""
+    seen: set[str] = set()
+    recipients: list[dict] = []
+    manager_email = RECIPIENT.strip().lower()
+
+    for row in rankings:
+        minutes = int(row.get("totalActiveMinutes") or 0)
+        logins = int(row.get("loginCount") or 0)
+        if minutes <= 0 and logins <= 0:
+            continue
+        email = str(row.get("email") or "").strip()
+        if not email or "@" not in email:
+            continue
+        email_key = email.lower()
+        if email_key == manager_email:
+            continue
+        if email_key in seen:
+            continue
+        seen.add(email_key)
+        recipients.append(row)
+    return recipients
+
+
+async def _already_sent(db, email_type: str, date_key: str, recipient: str) -> bool:
+    existing = await db.email_log.find_one(
+        {
+            "type": email_type,
+            "dateKey": date_key,
+            "recipientEmail": recipient,
+            "emailSent": True,
+        }
+    )
+    return bool(existing)
+
+
+async def _mark_sent(
+    db,
+    email_type: str,
+    date_key: str,
+    recipient: str,
+    extra: dict | None = None,
+) -> None:
+    payload = {
+        "emailSent": True,
+        "emailSentAt": datetime.utcnow(),
+    }
+    if extra:
+        payload.update(extra)
+    await db.email_log.update_one(
+        {
+            "type": email_type,
+            "dateKey": date_key,
+            "recipientEmail": recipient,
+        },
+        {"$set": payload},
+        upsert=True,
+    )
+
+
+async def _job_should_stop(db) -> bool:
+    control = await db.job_control.find_one({"_id": JOB_ID})
+    return bool(control and control.get("status") == "stop")
+
+
 async def send_operator_activity_daily_email(prop_db, db):
     logger.info("Starting operator activity daily email job")
 
@@ -166,25 +302,12 @@ async def send_operator_activity_daily_email(prop_db, db):
         return
 
     try:
-        control = await db.job_control.find_one({"_id": JOB_ID})
-        if control and control.get("status") == "stop":
+        if await _job_should_stop(db):
             logger.info("Job status is stop; skipping send")
             return
 
         today_greece = datetime.now(GREECE_TZ).date()
         date_key = today_greece.isoformat()
-
-        existing = await db.email_log.find_one(
-            {
-                "type": EMAIL_LOG_TYPE,
-                "dateKey": date_key,
-                "recipientEmail": RECIPIENT,
-                "emailSent": True,
-            }
-        )
-        if existing:
-            logger.info("Already sent operator activity email for %s", date_key)
-            return
 
         payload = await get_operator_activity_report(
             prop_db,
@@ -193,34 +316,90 @@ async def send_operator_activity_daily_email(prop_db, db):
             end_at_now=True,
         )
         period_label = (payload.get("period") or {}).get("label") or date_key
-        subject = f"Operator Active Time — {period_label}"
-        body = format_operator_activity_email(payload)
-
-        await asyncio.to_thread(send_email_v2, [RECIPIENT], subject, body)
-
         summary = payload.get("summary") or {}
-        await db.email_log.update_one(
-            {
-                "type": EMAIL_LOG_TYPE,
-                "dateKey": date_key,
-                "recipientEmail": RECIPIENT,
-            },
-            {
-                "$set": {
-                    "emailSent": True,
-                    "emailSentAt": datetime.utcnow(),
+        rankings = payload.get("rankings") or []
+
+        # 1) Full ranking report → Kostas
+        if not await _already_sent(db, EMAIL_LOG_TYPE, date_key, RECIPIENT):
+            subject = f"Operator Active Time — {period_label}"
+            body = format_operator_activity_email(payload)
+            await asyncio.to_thread(send_email_v2, [RECIPIENT], subject, body)
+            await _mark_sent(
+                db,
+                EMAIL_LOG_TYPE,
+                date_key,
+                RECIPIENT,
+                {
                     "operatorCount": summary.get("totalOperators") or 0,
                     "totalActiveMinutes": summary.get("totalActiveMinutes") or 0,
                     "operatorsWithActivity": summary.get("operatorsWithActivity") or 0,
-                }
-            },
-            upsert=True,
-        )
+                },
+            )
+            logger.info(
+                "Sent operator activity summary to %s | operators=%s | minutes=%s",
+                RECIPIENT,
+                summary.get("totalOperators"),
+                summary.get("totalActiveMinutes"),
+            )
+        else:
+            logger.info("Already sent manager summary for %s", date_key)
+
+        # 2) Personal summaries → each operator (own activity only)
+        personal_recipients = _operator_recipients(rankings)
+        sent_personal = 0
+        skipped_personal = 0
+
+        for row in personal_recipients:
+            if await _job_should_stop(db):
+                logger.info("Stop signal received; halting personal emails")
+                break
+
+            email = str(row.get("email") or "").strip()
+            if await _already_sent(db, EMAIL_LOG_TYPE_PERSONAL, date_key, email):
+                skipped_personal += 1
+                continue
+
+            subject = f"Your activity summary — {period_label}"
+            body = format_personal_operator_email(row, period_label)
+            try:
+                await asyncio.to_thread(
+                    send_email_v2,
+                    [email],
+                    subject,
+                    body,
+                    PERSONAL_CC,
+                )
+                await _mark_sent(
+                    db,
+                    EMAIL_LOG_TYPE_PERSONAL,
+                    date_key,
+                    email,
+                    {
+                        "firebaseId": row.get("firebaseId"),
+                        "displayName": row.get("displayName"),
+                        "totalActiveMinutes": row.get("totalActiveMinutes") or 0,
+                        "loginCount": row.get("loginCount") or 0,
+                    },
+                )
+                sent_personal += 1
+                logger.info(
+                    "Sent personal activity email to %s (%s)",
+                    email,
+                    row.get("displayName"),
+                )
+            except Exception as send_exc:
+                logger.error(
+                    "Failed personal activity email to %s: %s", email, send_exc
+                )
+                traceback.print_exc()
+
+            await asyncio.sleep(OPERATOR_SEND_DELAY_SECONDS)
+
         logger.info(
-            "Sent operator activity email to %s | operators=%s | minutes=%s",
-            RECIPIENT,
-            summary.get("totalOperators"),
-            summary.get("totalActiveMinutes"),
+            "Personal operator emails done | sent=%s skipped=%s candidates=%s",
+            sent_personal,
+            skipped_personal,
+            len(personal_recipients),
         )
     except Exception as exc:
         logger.error("Operator activity email job failed: %s", exc)
@@ -250,6 +429,6 @@ def start_operator_activity_email_scheduler(prop_db, db):
     if not scheduler.running:
         scheduler.start()
     logger.info(
-        "Operator activity daily email scheduled (19:00 Europe/Athens) → %s",
+        "Operator activity daily email scheduled (19:00 Europe/Athens) → %s + operators",
         RECIPIENT,
     )
