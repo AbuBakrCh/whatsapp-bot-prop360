@@ -20,6 +20,7 @@ FIELD_DATE = "field-1757605069078-p5plna7qr"
 FIELD_DESCRIPTION = "field-1757605219384-fikyy3d7u"
 FIELD_AMOUNT = "field-1757605508754-uea4iadqd"
 FIELD_DEBIT_CREDIT = "field-1757605718340-ue95ozr9u"
+FIELD_PAYMENT_DIRECTION = "field-1783088283028-kwkardhwn"
 FIELD_CATEGORY = "field-1780751488281-e84mgqaeo"
 FIELD_CASHFLOW_CONTACT = "field-1761124961032-67lj21506"
 
@@ -268,6 +269,20 @@ def normalize_debit_credit(value: Any) -> str | None:
     return None
 
 
+def normalize_payment_direction(value: Any) -> str | None:
+    """Map Incoming/Outgoing Payment to credit/debit when Debit/Credit is unset."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if "incoming" in text:
+        return "credit"
+    if "outgoing" in text:
+        return "debit"
+    return None
+
+
 def doc_matches_property_id(data: dict, property_id: str) -> bool:
     pid = str(property_id).strip()
     for field in ACTIVITY_PROPERTY_FIELDS:
@@ -381,6 +396,8 @@ async def fetch_activities(prop_db, group_type: str, group_id: str) -> list[dict
 def parse_cashflow_document(doc: dict) -> dict | None:
     data = doc.get("data") or {}
     entry_type = normalize_debit_credit(data.get(FIELD_DEBIT_CREDIT))
+    if not entry_type:
+        entry_type = normalize_payment_direction(data.get(FIELD_PAYMENT_DIRECTION))
     if not entry_type:
         return None
 
