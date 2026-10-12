@@ -748,3 +748,96 @@ export async function shareWithGroups(payload) {
     };
   }
 }
+
+export async function searchContacts(q, limit = 15) {
+  try {
+    const response = await axios.get(`${BASE}/contacts/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to search contacts",
+    };
+  }
+}
+
+export async function searchProperties(q, limit = 15) {
+  try {
+    const response = await axios.get(`${BASE}/properties/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to search properties",
+    };
+  }
+}
+
+export async function getRecurrentAccrualDocumentTypes() {
+  try {
+    const response = await axios.get(`${BASE}/recurrent-accruals/document-types`);
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to load document types",
+    };
+  }
+}
+
+export async function createRecurrentAccrualSchedule(payload) {
+  try {
+    const response = await axios.post(`${BASE}/recurrent-accruals`, payload);
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to create schedule",
+    };
+  }
+}
+
+export async function listRecurrentAccrualSchedules(ownerPid = "") {
+  try {
+    const response = await axios.get(`${BASE}/recurrent-accruals`, {
+      params: ownerPid ? { ownerPid } : {},
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to load schedules",
+    };
+  }
+}
+
+export async function updateRecurrentAccrualSchedule(scheduleId, payload) {
+  try {
+    const response = await axios.patch(
+      `${BASE}/recurrent-accruals/${encodeURIComponent(scheduleId)}`,
+      payload
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to update schedule",
+    };
+  }
+}

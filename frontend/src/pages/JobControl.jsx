@@ -29,6 +29,9 @@ function formatResult(data) {
   const when = data.finishedAt
     ? ` at ${formatGreeceTime(data.finishedAt)} (Greece)`
     : "";
+  if (result.cashflowsCreated !== undefined) {
+    return `Finished${when}: created ${result.cashflowsCreated} cashflow(s), ${result.periodsProcessed ?? 0} period(s)`;
+  }
   return `Finished${when}: scanned ${result.scanned ?? 0}`;
 }
 

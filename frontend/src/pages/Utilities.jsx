@@ -21,6 +21,7 @@ import {
   AlertCircle,
   RefreshCw,
   Activity,
+  Repeat,
 } from 'lucide-react'
 import SendBulkEmail from './SendBulkEmail'
 import ProcessBankStatementsDrive from './ProcessBankStatementsDrive'
@@ -41,6 +42,7 @@ import MergeContacts from './MergeContacts'
 import JobControl from './JobControl'
 import ExpiryJobsControl from './ExpiryJobsControl'
 import JobEmailRecipientsControl from './JobEmailRecipientsControl'
+import RecurrentAccruals from './RecurrentAccruals'
 
 const tools = [
   {
@@ -164,6 +166,14 @@ const tools = [
     render: () => <ManageCashflows />,
   },
   {
+    id: 'recurrent-accruals',
+    label: 'Recurrent Accruals',
+    description: 'Scheduled Debit Accrual cashflows by property',
+    icon: Repeat,
+    group: 'Finance',
+    render: () => <RecurrentAccruals />,
+  },
+  {
     id: 'generate-invoice',
     label: 'Generate Invoice',
     description: 'Create consultant invoice PDF',
@@ -231,6 +241,20 @@ const tools = [
       <JobControl
         jobId="sync-cashflow-refs"
         jobName="Sync Cashflow Property/Contact Refs"
+        pollStatus
+      />
+    ),
+  },
+  {
+    id: 'recurrent-accruals-job',
+    label: 'Recurrent Accruals Job',
+    description: 'Daily job that inserts due recurrent accrual cashflows',
+    icon: Repeat,
+    group: 'Jobs',
+    render: () => (
+      <JobControl
+        jobId="recurrent-accruals"
+        jobName="Recurrent Accrual Cashflows"
         pollStatus
       />
     ),

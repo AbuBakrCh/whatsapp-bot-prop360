@@ -61,6 +61,19 @@ from sync_timetable_refs_job import (
     start_sync_timetable_refs_scheduler,
     run_sync_timetable_refs_job,
 )
+from recurrent_accrual_job import (
+    start_recurrent_accrual_scheduler,
+    run_recurrent_accrual_job,
+)
+from services.recurrent_accruals import (
+    ACCRUAL_DOCUMENT_TYPES,
+    FREQUENCIES,
+    SCHEDULES_COLLECTION,
+    SCHEDULE_STATUSES,
+    process_one_schedule,
+    search_contacts,
+    search_properties,
+)
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
 from passport_expiry_job import start_passport_expiry_scheduler
@@ -749,6 +762,7 @@ async def ensure_indexes():
     start_operator_activity_email_scheduler(prop_db, db)
     start_sync_cashflow_refs_scheduler(prop_db, db)
     start_sync_timetable_refs_scheduler(prop_db, db)
+    start_recurrent_accrual_scheduler(prop_db, db)
     # Do not block API readiness on a long ownership transfer run.
     asyncio.create_task(transfer_ownership(prop_db))
     start_activity_summary_emails_scheduler(db)
@@ -2333,6 +2347,190 @@ async def delete_properties(payload: dict):
         traceback.print_exc()
         return {"error": str(e)}
 
+def _serialize_recurrent_schedule(doc: dict | None) -> dict | None:
+    if not doc:
+        return None
+    out = {k: v for k, v in doc.items() if k != "_id"}
+    out["id"] = str(doc["_id"])
+    for key in ("createdAt", "updatedAt", "lastRunAt"):
+        val = out.get(key)
+        if isinstance(val, datetime):
+            out[key] = val.isoformat() + "Z"
+    generated = out.get("generated") or []
+    serialized_generated = []
+    for entry in generated:
+        item = dict(entry)
+        created = item.get("createdAt")
+        if isinstance(created, datetime):
+            item["createdAt"] = created.isoformat() + "Z"
+        serialized_generated.append(item)
+    out["generated"] = serialized_generated
+    return out
+
+
+@fastapi_app.get("/contacts/search")
+async def search_contacts_endpoint(
+    q: str = Query("", min_length=0),
+    limit: int = Query(15, ge=1, le=50),
+):
+    query_text = (q or "").strip()
+    if len(query_text) < 2:
+        return {"data": []}
+    data = await search_contacts(prop_db, query_text, limit)
+    return {"data": data}
+
+
+@fastapi_app.get("/properties/search")
+async def search_properties_endpoint(
+    q: str = Query("", min_length=0),
+    limit: int = Query(15, ge=1, le=50),
+):
+    query_text = (q or "").strip()
+    if len(query_text) < 2:
+        return {"data": []}
+    data = await search_properties(prop_db, query_text, limit)
+    return {"data": data}
+
+
+@fastapi_app.get("/recurrent-accruals/document-types")
+async def list_recurrent_accrual_document_types():
+    return {"documentTypes": ACCRUAL_DOCUMENT_TYPES}
+
+
+@fastapi_app.post("/recurrent-accruals")
+async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
+    contact = payload.get("contact") or {}
+    properties = payload.get("properties") or []
+    document_type = (payload.get("documentType") or "").strip()
+    amount = payload.get("amount")
+    frequency = (payload.get("frequency") or "").strip()
+    start_date = (payload.get("startDate") or "").strip()
+    end_date = (payload.get("endDate") or "").strip() or None
+
+    if not contact.get("pid") or not contact.get("label"):
+        raise HTTPException(status_code=400, detail="Property owner contact is required.")
+    if not properties:
+        raise HTTPException(status_code=400, detail="At least one property is required.")
+    if document_type not in ACCRUAL_DOCUMENT_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid document type.")
+    if frequency not in FREQUENCIES:
+        raise HTTPException(status_code=400, detail="Invalid frequency.")
+    try:
+        amount_f = float(amount)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Amount must be a number.")
+    if amount_f <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than zero.")
+    if not start_date:
+        raise HTTPException(status_code=400, detail="startDate is required.")
+
+    norm_properties = []
+    for prop in properties:
+        pid = str(prop.get("pid", "")).strip()
+        label = (prop.get("label") or "").strip()
+        if not pid or not label:
+            raise HTTPException(status_code=400, detail="Each property needs pid and label.")
+        norm_properties.append({"pid": pid, "label": label})
+
+    now = datetime.utcnow()
+    doc = {
+        "status": "active",
+        "contact": {
+            "pid": str(contact["pid"]),
+            "label": str(contact["label"]).strip(),
+        },
+        "properties": norm_properties,
+        "documentType": document_type,
+        "amount": amount_f,
+        "frequency": frequency,
+        "startDate": start_date[:10],
+        "endDate": end_date[:10] if end_date else None,
+        "nextDueDate": start_date[:10],
+        "lastRunAt": None,
+        "createdAt": now,
+        "updatedAt": now,
+        "generated": [],
+    }
+    schedules = prop_db[SCHEDULES_COLLECTION]
+    result = await schedules.insert_one(doc)
+    created = await schedules.find_one({"_id": result.inserted_id})
+
+    # Create any periods that are already due (including first accrual = today).
+    immediate = await process_one_schedule(prop_db, created)
+    created = await schedules.find_one({"_id": result.inserted_id})
+
+    return {
+        "schedule": _serialize_recurrent_schedule(created),
+        "immediate": immediate,
+    }
+
+
+@fastapi_app.get("/recurrent-accruals")
+async def list_recurrent_accrual_schedules(
+    ownerPid: str = Query("", alias="ownerPid"),
+):
+    filt: dict[str, Any] = {}
+    owner_pid = (ownerPid or "").strip()
+    if owner_pid:
+        filt["contact.pid"] = owner_pid
+
+    cursor = prop_db[SCHEDULES_COLLECTION].find(filt).sort("createdAt", -1)
+    schedules = []
+    async for doc in cursor:
+        schedules.append(_serialize_recurrent_schedule(doc))
+    return {"schedules": schedules}
+
+
+@fastapi_app.get("/recurrent-accruals/{schedule_id}")
+async def get_recurrent_accrual_schedule(schedule_id: str):
+    try:
+        oid = ObjectId(schedule_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid schedule id.")
+    doc = await prop_db[SCHEDULES_COLLECTION].find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    return {"schedule": _serialize_recurrent_schedule(doc)}
+
+
+@fastapi_app.patch("/recurrent-accruals/{schedule_id}")
+async def update_recurrent_accrual_schedule(
+    schedule_id: str,
+    payload: dict = Body(...),
+):
+    try:
+        oid = ObjectId(schedule_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid schedule id.")
+
+    schedules = prop_db[SCHEDULES_COLLECTION]
+    doc = await schedules.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+
+    updates: dict[str, Any] = {"updatedAt": datetime.utcnow()}
+    status = payload.get("status")
+    if status is not None:
+        if status not in SCHEDULE_STATUSES:
+            raise HTTPException(status_code=400, detail="Invalid status.")
+        updates["status"] = status
+
+    if payload.get("amount") is not None:
+        try:
+            amount_f = float(payload["amount"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Amount must be a number.")
+        if amount_f <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than zero.")
+        updates["amount"] = amount_f
+    if payload.get("endDate") is not None:
+        end_raw = (payload.get("endDate") or "").strip()
+        updates["endDate"] = end_raw[:10] if end_raw else None
+
+    await schedules.update_one({"_id": oid}, {"$set": updates})
+    updated = await schedules.find_one({"_id": oid})
+    return {"schedule": _serialize_recurrent_schedule(updated)}
+
 @fastapi_app.post("/contacts/add")
 async def add_contacts(payload: dict):
     """
@@ -3569,6 +3767,51 @@ async def control_sync_timetable_refs_job(action: str):
         upsert=True,
     )
     return {"message": "Stop signal sent"}
+
+
+@fastapi_app.post("/jobs/recurrent-accruals")
+async def control_recurrent_accrual_job(action: str):
+    if action not in ["start", "stop"]:
+        return {"error": "action must be start or stop"}
+
+    job_id = "recurrent_accrual_job"
+    doc = await db.job_control.find_one({"_id": job_id})
+    running = doc.get("running") if doc else False
+
+    if action == "start":
+        if running:
+            return {"message": "Job already running"}
+
+        await db.job_control.update_one(
+            {"_id": job_id},
+            {"$set": {"status": "start"}},
+            upsert=True,
+        )
+        asyncio.create_task(run_recurrent_accrual_job(prop_db, db))
+        return {"message": "Job started"}
+
+    await db.job_control.update_one(
+        {"_id": job_id},
+        {"$set": {"status": "stop"}},
+        upsert=True,
+    )
+    return {"message": "Stop signal sent"}
+
+
+@fastapi_app.get("/jobs/recurrent-accruals")
+async def get_recurrent_accrual_job_status():
+    job_id = "recurrent_accrual_job"
+    doc = await db.job_control.find_one({"_id": job_id}) or {}
+    finished_at = doc.get("finishedAt")
+    started_at = doc.get("startedAt")
+    return {
+        "running": bool(doc.get("running")),
+        "status": doc.get("status"),
+        "lastResult": doc.get("lastResult"),
+        "lastError": doc.get("lastError"),
+        "startedAt": started_at.isoformat() + "Z" if started_at else None,
+        "finishedAt": finished_at.isoformat() + "Z" if finished_at else None,
+    }
 
 
 @fastapi_app.get("/jobs/sync-timetable-refs")
