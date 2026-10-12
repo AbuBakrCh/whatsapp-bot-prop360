@@ -70,6 +70,7 @@ from services.recurrent_accruals import (
     FREQUENCIES,
     SCHEDULES_COLLECTION,
     SCHEDULE_STATUSES,
+    TRX_DESCRIPTIONS,
     process_one_schedule,
     search_contacts,
     search_properties,
@@ -2394,7 +2395,10 @@ async def search_properties_endpoint(
 
 @fastapi_app.get("/recurrent-accruals/document-types")
 async def list_recurrent_accrual_document_types():
-    return {"documentTypes": ACCRUAL_DOCUMENT_TYPES}
+    return {
+        "documentTypes": ACCRUAL_DOCUMENT_TYPES,
+        "trxDescriptions": TRX_DESCRIPTIONS,
+    }
 
 
 @fastapi_app.post("/recurrent-accruals")
@@ -2402,6 +2406,8 @@ async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
     contact = payload.get("contact") or {}
     properties = payload.get("properties") or []
     document_type = (payload.get("documentType") or "").strip()
+    trx_description = (payload.get("trxDescription") or "").strip()
+    notes = (payload.get("notes") or "").strip()
     amount = payload.get("amount")
     frequency = (payload.get("frequency") or "").strip()
     start_date = (payload.get("startDate") or "").strip()
@@ -2413,6 +2419,8 @@ async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="At least one property is required.")
     if document_type not in ACCRUAL_DOCUMENT_TYPES:
         raise HTTPException(status_code=400, detail="Invalid document type.")
+    if trx_description not in TRX_DESCRIPTIONS:
+        raise HTTPException(status_code=400, detail="Invalid Trx Description.")
     if frequency not in FREQUENCIES:
         raise HTTPException(status_code=400, detail="Invalid frequency.")
     try:
@@ -2441,6 +2449,8 @@ async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
         },
         "properties": norm_properties,
         "documentType": document_type,
+        "trxDescription": trx_description,
+        "notes": notes,
         "amount": amount_f,
         "frequency": frequency,
         "startDate": start_date[:10],

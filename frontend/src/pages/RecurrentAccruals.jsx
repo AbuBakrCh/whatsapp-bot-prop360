@@ -30,10 +30,13 @@ function formatDate(iso) {
 export default function RecurrentAccruals() {
   const [tab, setTab] = useState("create");
   const [documentTypes, setDocumentTypes] = useState([]);
+  const [trxDescriptions, setTrxDescriptions] = useState([]);
 
   const [ownerContact, setOwnerContact] = useState(null);
   const [properties, setProperties] = useState([]);
   const [documentType, setDocumentType] = useState("");
+  const [trxDescription, setTrxDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [amount, setAmount] = useState("");
   const [frequency, setFrequency] = useState("monthly");
   const [startDate, setStartDate] = useState("");
@@ -50,11 +53,14 @@ export default function RecurrentAccruals() {
 
   useEffect(() => {
     getRecurrentAccrualDocumentTypes().then((res) => {
-      if (!res.error && res.documentTypes) {
+      if (res.error) return;
+      if (res.documentTypes?.length) {
         setDocumentTypes(res.documentTypes);
-        if (res.documentTypes.length && !documentType) {
-          setDocumentType(res.documentTypes[0]);
-        }
+        setDocumentType((prev) => prev || res.documentTypes[0]);
+      }
+      if (res.trxDescriptions?.length) {
+        setTrxDescriptions(res.trxDescriptions);
+        setTrxDescription((prev) => prev || res.trxDescriptions[0]);
       }
     });
   }, []);
@@ -94,6 +100,10 @@ export default function RecurrentAccruals() {
       setCreateMessage("First accrual date is required.");
       return;
     }
+    if (!trxDescription) {
+      setCreateMessage("Select a Trx Description.");
+      return;
+    }
     const amountNum = parseFloat(amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setCreateMessage("Enter a valid amount greater than zero.");
@@ -105,6 +115,8 @@ export default function RecurrentAccruals() {
       contact: ownerContact,
       properties,
       documentType,
+      trxDescription,
+      notes,
       amount: amountNum,
       frequency,
       startDate,
@@ -133,6 +145,7 @@ export default function RecurrentAccruals() {
     }
     setOwnerContact(null);
     setProperties([]);
+    setNotes("");
     setAmount("");
     setEndDate("");
   };
@@ -224,6 +237,35 @@ export default function RecurrentAccruals() {
                 required
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Trx Description
+            </label>
+            <select
+              value={trxDescription}
+              onChange={(e) => setTrxDescription(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              required
+            >
+              {trxDescriptions.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Invest Greece notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              placeholder="Optional notes"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -370,7 +412,12 @@ export default function RecurrentAccruals() {
                           </button>
                           <p className="text-xs text-gray-500 truncate">{propLabels}</p>
                         </td>
-                        <td className="px-3 py-2 align-top">{row.documentType}</td>
+                        <td className="px-3 py-2 align-top">
+                          <div>{row.documentType}</div>
+                          <div className="text-xs text-gray-500">
+                            {row.trxDescription || "—"}
+                          </div>
+                        </td>
                         <td className="px-3 py-2 align-top">{row.amount}</td>
                         <td className="px-3 py-2 align-top">{row.frequency}</td>
                         <td className="px-3 py-2 align-top">{row.nextDueDate}</td>
@@ -420,6 +467,11 @@ export default function RecurrentAccruals() {
                                 ? ` · Last run ${formatDate(row.lastRunAt)}`
                                 : ""}
                             </p>
+                            {row.notes ? (
+                              <p className="text-sm text-gray-700 mb-2">
+                                Notes: {row.notes}
+                              </p>
+                            ) : null}
                             <ul className="space-y-1 text-sm">
                               {(row.generated || []).length === 0 && (
                                 <li className="text-gray-400">No cashflows generated yet</li>

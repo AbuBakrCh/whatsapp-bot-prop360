@@ -20,6 +20,7 @@ from services.ledger_report import (
     FIELD_CATEGORY,
     FIELD_DATE,
     FIELD_DEBIT_CREDIT,
+    FIELD_DESCRIPTION,
     FIELD_PROPERTY,
     PROPERTY_TITLE_FIELD,
     property_field_regex,
@@ -38,7 +39,6 @@ KOSTAS_OWNER_ID = "l9C9DQ7nd6VOW4PGqNQL81IWaJM2"
 
 FIELD_DOCUMENT_TYPE = "field-1758699529035-xp7lumgx5"
 FIELD_NOTES = "field-1757605632930-2hfg96qgr"
-RECURRENT_ACCRUAL_NOTE = "Recurrent accrual created by Kostas Console"
 
 CONTACT_NAME_FIELD = "field-1741774547654-ngd30kdcz"
 CONTACT_EMAIL_FIELD = "field-1741774690043-v7jylsjj2"
@@ -68,6 +68,97 @@ ACCRUAL_DOCUMENT_TYPES = [
     "Land Registry - Ktimatologio",
     "Cash In Hand",
     "Property Sale Accrual",
+]
+
+TRX_DESCRIPTIONS = [
+    "A/C & Refrigeration Technician",
+    "Accounting Fee",
+    "Advance Payment",
+    "Advance Payment to Employee",
+    "After Sale Credits",
+    "Attorney Fee for Property Acquisition",
+    "Bank Account Setup",
+    "Bank Fees",
+    "Car Insurance",
+    "Car Parking",
+    "Car Registration Renewal",
+    "Car Rental",
+    "Card Fees",
+    "Cash Flow",
+    "Cleaning Fee",
+    "Common Expenses",
+    "Corporate Accounting Fees",
+    "Corporate ENFIA",
+    "Corporate Legal Fees",
+    "Corporate VAT",
+    "Deposit Received from Customer",
+    "Donation",
+    "E9",
+    "Electrician",
+    "Electricity Bill",
+    "Electricity Bill Payment",
+    "Electricity Connection",
+    "Electricity Transfer",
+    "Engineering Duties",
+    "Extrajudicial Process Fee",
+    "F9",
+    "Gasoline",
+    "IDE",
+    "Insurance Fees",
+    "Internet Bill",
+    "Internet Bill Payment",
+    "IT Expenses",
+    "KTEO",
+    "Land Registry Fee",
+    "Lease Agreement Accounting Taxis",
+    "Lease Agreement Preparation",
+    "Lease Agreement Renewal",
+    "Legal Buying Fee",
+    "Legal Consultation Fee for Residence Permit",
+    "Legal Review",
+    "Management Accounting Expenses",
+    "Management Fee",
+    "Maintenance/Repair Expense",
+    "Meal Expense",
+    "Mobile Phone",
+    "Natural Gas Bill",
+    "Natural Gas Connection",
+    "Notary Fee",
+    "Payment For Various Expenses",
+    "Payment Made on Behalf of Customer",
+    "Payroll",
+    "Plumber",
+    "Property Tax",
+    "Real Estate Commission Fee",
+    "Real Estate Purchase",
+    "Real Estate Purchase Tax",
+    "Renovation Works",
+    "Rent Accrual",
+    "Rent Payment",
+    "Rental Commission",
+    "Rental Deposit",
+    "Rental Expenses",
+    "Rental Income",
+    "Rental Income Tax",
+    "Return Of Incorrect Payment",
+    "Social Security Expenses",
+    "Stationery Expenses",
+    "Supermarket",
+    "Tax 20%",
+    "Tax 3%",
+    "Tax Declaration",
+    "Tax ID Registration",
+    "Tax Payment",
+    "Teka",
+    "Tickets",
+    "Toll Fees",
+    "Transfers Between Accounts",
+    "Translations",
+    "Water Bill",
+    "Water Bill Payment",
+    "Water Connection",
+    "Water Heater Payment",
+    "Water Transfer",
 ]
 
 FREQUENCIES = frozenset(
@@ -122,6 +213,8 @@ def advance_due_date(start_anchor: date, frequency: str, current_due: date) -> d
 def build_cashflow_data(
     *,
     document_type: str,
+    trx_description: str,
+    notes: str,
     amount: float,
     due_date: date,
     property_label: str,
@@ -130,17 +223,21 @@ def build_cashflow_data(
     owner_pid: str,
 ) -> dict[str, Any]:
     due_str = due_date.isoformat()
-    return {
+    data = {
         FIELD_DOCUMENT_TYPE: document_type,
         FIELD_CATEGORY: "Accrual",
         FIELD_DEBIT_CREDIT: "Debit",
         FIELD_AMOUNT: _format_amount(amount),
         FIELD_DATE: due_str,
-        FIELD_NOTES: RECURRENT_ACCRUAL_NOTE,
+        FIELD_DESCRIPTION: trx_description,
         FIELD_PROPERTY: _build_piped(property_label, property_pid),
         FIELD_CASHFLOW_CONTACT: _build_piped(owner_label, owner_pid),
         "attachedForms": [],
     }
+    notes_text = (notes or "").strip()
+    if notes_text:
+        data[FIELD_NOTES] = notes_text
+    return data
 
 
 def _prop360_owner_id() -> str:
@@ -400,6 +497,8 @@ async def _generate_for_period(
 
         data = build_cashflow_data(
             document_type=schedule["documentType"],
+            trx_description=schedule.get("trxDescription") or "",
+            notes=schedule.get("notes") or "",
             amount=float(schedule["amount"]),
             due_date=period_date,
             property_label=prop["label"],
