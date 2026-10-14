@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import io
 import logging
 import os
 import random
@@ -11,9 +13,12 @@ from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 from bson import ObjectId
 
+from services.commons import send_email_v2
 from services.ledger_report import (
+    CASHFLOW_FORM_URL_TEMPLATE,
     CASHFLOW_INDICATOR,
     FIELD_AMOUNT,
     FIELD_CASHFLOW_CONTACT,
@@ -44,7 +49,35 @@ CONTACT_NAME_FIELD = "field-1741774547654-ngd30kdcz"
 CONTACT_EMAIL_FIELD = "field-1741774690043-v7jylsjj2"
 CONTACT_PHONE_FIELD = "field-1741778098761-w10f6zg6y"
 
+DEFAULT_CC = ["ka@investgreece.gr"]
 MAX_CATCHUP_ITERATIONS = 24
+
+FREQUENCY_LABELS = {
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "every_2_months": "Every 2 months",
+    "quarterly": "Quarterly",
+    "yearly": "Yearly",
+}
+
+ACCRUAL_EMAIL_SUBJECT = "Invest Greece – Accrual notification ({property_label})"
+
+ACCRUAL_EMAIL_BODY = """Dear {customer_name},
+
+A new accrual has been recorded for your property.
+
+Property: {property_label}
+Amount: €{amount}
+Due date: {due_date}
+Trx Description: {trx_description}
+Document type: {document_type}
+{notes_line}
+You can review the cashflow here:
+{cashflow_url}
+
+Best regards,
+Invest Greece
+"""
 
 ACCRUAL_DOCUMENT_TYPES = [
     "Bank Transaction",
@@ -247,6 +280,130 @@ def _prop360_owner_id() -> str:
 def _new_cashflow_pid() -> float:
     """Generate a unique-looking numeric PID matching Prop360 style."""
     return float(random.randint(10**15, 10**16 - 1))
+
+
+async def _resolve_contact_email(prop_db, owner_pid: str) -> str | None:
+    try:
+        pid_float = float(owner_pid)
+    except (TypeError, ValueError):
+        return None
+
+    contact_doc = await prop_db.formdatas.find_one(
+        {
+            "pid": pid_float,
+            "indicator": "contacts",
+            "status": "active",
+        },
+        {f"data.{CONTACT_EMAIL_FIELD}": 1},
+    )
+    if not contact_doc:
+        return None
+
+    email = (contact_doc.get("data") or {}).get(CONTACT_EMAIL_FIELD)
+    if not email:
+        return None
+    email = str(email).strip()
+    return email or None
+
+
+async def send_recurrent_accrual_email(
+    prop_db,
+    *,
+    owner_pid: str,
+    owner_label: str,
+    property_label: str,
+    amount: float,
+    due_date: date,
+    trx_description: str,
+    document_type: str,
+    notes: str,
+    cashflow_id: str,
+) -> bool:
+    """
+    Email the property owner about a newly created recurrent accrual.
+    Failures are logged and never block cashflow creation.
+    """
+    owner_email = await _resolve_contact_email(prop_db, owner_pid)
+    if not owner_email:
+        logger.info(
+            "Skip accrual email | reason=missing_email | owner_pid=%s | cashflow=%s",
+            owner_pid,
+            cashflow_id,
+        )
+        return False
+
+    notes_text = (notes or "").strip()
+    notes_line = f"Notes: {notes_text}\n" if notes_text else ""
+    subject = ACCRUAL_EMAIL_SUBJECT.format(property_label=property_label)
+    body = ACCRUAL_EMAIL_BODY.format(
+        customer_name=owner_label or "Client",
+        property_label=property_label,
+        amount=_format_amount(amount),
+        due_date=due_date.isoformat(),
+        trx_description=trx_description or "—",
+        document_type=document_type or "—",
+        notes_line=notes_line,
+        cashflow_url=CASHFLOW_FORM_URL_TEMPLATE.format(cashflow_id=cashflow_id),
+    )
+
+    try:
+        await asyncio.to_thread(
+            send_email_v2,
+            [owner_email],
+            subject,
+            body,
+            DEFAULT_CC,
+        )
+        logger.info(
+            "Sent recurrent accrual email | to=%s | cc=%s | cashflow=%s",
+            owner_email,
+            DEFAULT_CC,
+            cashflow_id,
+        )
+        return True
+    except Exception:
+        logger.exception(
+            "Failed recurrent accrual email | to=%s | cashflow=%s",
+            owner_email,
+            cashflow_id,
+        )
+        return False
+
+
+def build_schedules_excel(schedules: list[dict[str, Any]]) -> bytes:
+    """Build an .xlsx report for recurrent accrual schedules."""
+    rows: list[dict[str, Any]] = []
+    for schedule in schedules:
+        contact = schedule.get("contact") or {}
+        properties = schedule.get("properties") or []
+        prop_labels = ", ".join(
+            (p.get("label") or p.get("pid") or "") for p in properties
+        )
+        frequency = schedule.get("frequency") or ""
+        rows.append(
+            {
+                "Owner": contact.get("label") or "",
+                "Owner PID": contact.get("pid") or "",
+                "Properties": prop_labels,
+                "Document Type": schedule.get("documentType") or "",
+                "Trx Description": schedule.get("trxDescription") or "",
+                "Invest Greece Notes": schedule.get("notes") or "",
+                "Amount": schedule.get("amount"),
+                "Frequency": FREQUENCY_LABELS.get(frequency, frequency),
+                "Start Date": schedule.get("startDate") or "",
+                "End Date": schedule.get("endDate") or "",
+                "Next Due": schedule.get("nextDueDate") or "",
+                "Status": schedule.get("status") or "",
+                "Last Run": schedule.get("lastRunAt") or "",
+                "Generated Count": len(schedule.get("generated") or []),
+                "Schedule ID": schedule.get("id") or "",
+            }
+        )
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="Recurrent Accruals")
+    return buffer.getvalue()
 
 
 async def create_cashflow_in_prop360(
@@ -514,11 +671,25 @@ async def _generate_for_period(
             period=period_str,
         )
 
+        emailed = await send_recurrent_accrual_email(
+            prop_db,
+            owner_pid=owner_pid,
+            owner_label=owner_label,
+            property_label=prop["label"],
+            amount=float(schedule["amount"]),
+            due_date=period_date,
+            trx_description=schedule.get("trxDescription") or "",
+            document_type=schedule.get("documentType") or "",
+            notes=schedule.get("notes") or "",
+            cashflow_id=cashflow_id,
+        )
+
         entry = {
             "period": period_str,
             "propertyPid": property_pid,
             "propertyLabel": prop["label"],
             "cashflowId": cashflow_id,
+            "emailSent": emailed,
             "createdAt": datetime.now(timezone.utc),
         }
         created_entries.append(entry)

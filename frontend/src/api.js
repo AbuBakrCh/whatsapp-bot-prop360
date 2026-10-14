@@ -825,6 +825,26 @@ export async function listRecurrentAccrualSchedules(ownerPid = "") {
   }
 }
 
+export async function exportRecurrentAccrualSchedules(ownerPid = "") {
+  try {
+    const response = await axios.get(`${BASE}/recurrent-accruals/export`, {
+      params: ownerPid ? { ownerPid } : {},
+      responseType: "blob",
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "recurrent-accruals-report.xlsx");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Error exporting recurrent accruals:", err);
+    throw err;
+  }
+}
+
 export async function updateRecurrentAccrualSchedule(scheduleId, payload) {
   try {
     const response = await axios.patch(

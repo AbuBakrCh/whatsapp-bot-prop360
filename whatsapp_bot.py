@@ -71,6 +71,7 @@ from services.recurrent_accruals import (
     SCHEDULES_COLLECTION,
     SCHEDULE_STATUSES,
     TRX_DESCRIPTIONS,
+    build_schedules_excel,
     process_one_schedule,
     search_contacts,
     search_properties,
@@ -2489,6 +2490,29 @@ async def list_recurrent_accrual_schedules(
     async for doc in cursor:
         schedules.append(_serialize_recurrent_schedule(doc))
     return {"schedules": schedules}
+
+
+@fastapi_app.get("/recurrent-accruals/export")
+async def export_recurrent_accrual_schedules(
+    ownerPid: str = Query("", alias="ownerPid"),
+):
+    filt: dict[str, Any] = {}
+    owner_pid = (ownerPid or "").strip()
+    if owner_pid:
+        filt["contact.pid"] = owner_pid
+
+    cursor = prop_db[SCHEDULES_COLLECTION].find(filt).sort("createdAt", -1)
+    schedules = []
+    async for doc in cursor:
+        schedules.append(_serialize_recurrent_schedule(doc))
+
+    excel_bytes = build_schedules_excel(schedules)
+    filename = "recurrent-accruals-report.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @fastapi_app.get("/recurrent-accruals/{schedule_id}")

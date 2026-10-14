@@ -4,6 +4,7 @@ import ContactSearchCombobox from "../components/ContactSearchCombobox";
 import PropertySearchCombobox from "../components/PropertySearchCombobox";
 import {
   createRecurrentAccrualSchedule,
+  exportRecurrentAccrualSchedules,
   getRecurrentAccrualDocumentTypes,
   listRecurrentAccrualSchedules,
   updateRecurrentAccrualSchedule,
@@ -48,6 +49,7 @@ export default function RecurrentAccruals() {
   const [schedules, setSchedules] = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [exportLoading, setExportLoading] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
@@ -159,6 +161,20 @@ export default function RecurrentAccruals() {
       return;
     }
     await loadSchedules();
+  };
+
+  const handleExport = async () => {
+    setExportLoading(true);
+    setReportError("");
+    try {
+      await exportRecurrentAccrualSchedules(filterOwner?.pid || "");
+    } catch (err) {
+      setReportError(
+        err.response?.data?.detail || err.message || "Failed to export report."
+      );
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   return (
@@ -349,6 +365,14 @@ export default function RecurrentAccruals() {
               >
                 {reportLoading ? "Loading…" : "Refresh"}
               </button>
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={exportLoading || reportLoading}
+                className="px-4 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                {exportLoading ? "Exporting…" : "Export XLS"}
+              </button>
               {filterOwner && (
                 <button
                   type="button"
@@ -370,6 +394,7 @@ export default function RecurrentAccruals() {
                   <th className="px-3 py-2">Owner</th>
                   <th className="px-3 py-2">Properties</th>
                   <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Trx Description</th>
                   <th className="px-3 py-2">Amount</th>
                   <th className="px-3 py-2">Frequency</th>
                   <th className="px-3 py-2">Next due</th>
@@ -380,7 +405,7 @@ export default function RecurrentAccruals() {
               <tbody>
                 {schedules.length === 0 && !reportLoading && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                       No schedules found
                     </td>
                   </tr>
@@ -412,11 +437,9 @@ export default function RecurrentAccruals() {
                           </button>
                           <p className="text-xs text-gray-500 truncate">{propLabels}</p>
                         </td>
+                        <td className="px-3 py-2 align-top">{row.documentType}</td>
                         <td className="px-3 py-2 align-top">
-                          <div>{row.documentType}</div>
-                          <div className="text-xs text-gray-500">
-                            {row.trxDescription || "—"}
-                          </div>
+                          {row.trxDescription || "—"}
                         </td>
                         <td className="px-3 py-2 align-top">{row.amount}</td>
                         <td className="px-3 py-2 align-top">{row.frequency}</td>
@@ -459,7 +482,7 @@ export default function RecurrentAccruals() {
                       </tr>
                       {isExpanded && (
                         <tr className="bg-slate-50">
-                          <td colSpan={8} className="px-4 py-3">
+                          <td colSpan={9} className="px-4 py-3">
                             <p className="text-xs text-gray-500 mb-2">
                               Start {row.startDate}
                               {row.endDate ? ` · End ${row.endDate}` : ""}
