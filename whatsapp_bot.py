@@ -2410,6 +2410,7 @@ async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
     trx_description = (payload.get("trxDescription") or "").strip()
     notes = (payload.get("notes") or "").strip()
     amount = payload.get("amount")
+    annual_increment = payload.get("annualIncrementPercent")
     frequency = (payload.get("frequency") or "").strip()
     start_date = (payload.get("startDate") or "").strip()
     end_date = (payload.get("endDate") or "").strip() or None
@@ -2433,6 +2434,19 @@ async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
     if not start_date:
         raise HTTPException(status_code=400, detail="startDate is required.")
 
+    annual_increment_f = 0.0
+    if annual_increment is not None and str(annual_increment).strip() != "":
+        try:
+            annual_increment_f = float(annual_increment)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400, detail="Annual increment percent must be a number."
+            )
+        if annual_increment_f < 0:
+            raise HTTPException(
+                status_code=400, detail="Annual increment percent cannot be negative."
+            )
+
     norm_properties = []
     for prop in properties:
         pid = str(prop.get("pid", "")).strip()
@@ -2453,6 +2467,7 @@ async def create_recurrent_accrual_schedule(payload: dict = Body(...)):
         "trxDescription": trx_description,
         "notes": notes,
         "amount": amount_f,
+        "annualIncrementPercent": annual_increment_f,
         "frequency": frequency,
         "startDate": start_date[:10],
         "endDate": end_date[:10] if end_date else None,
@@ -2565,6 +2580,74 @@ async def update_recurrent_accrual_schedule(
     updated = await schedules.find_one({"_id": oid})
     return {"schedule": _serialize_recurrent_schedule(updated)}
 
+# Contact form field IDs used when sharing / unsharing contacts
+CONTACT_FIELD_SEARCH_FOR_PROPERTY = "field-1763539699080-ku2jwh8je"
+CONTACT_FIELD_DOES_HE_HAVE_PROPERTY = "field-1760945578087-1d922hj0e"
+CONTACT_FIELD_TAX_CLIENT = "field-1788724202370-9zqknqsz0"
+CONTACT_FIELD_INSURANCE_CUSTOMER = "field-1788724205795-2qhb07l8p"
+CONTACT_FIELD_RENTAL_CUSTOMER = "field-1788724209365-n06ya41c4"
+CONTACT_FIELD_MANAGEMENT_CLIENT = "field-1788724213248-tt29cb8og"
+CONTACT_FIELD_CONTACT_TYPE = "field-1791104173058-f31hdqyts"
+CONTACT_FIELD_LEAD_ROLE = "field-1774946423103-f6s52ediy"
+CONTACT_FIELD_ENTRY_TYPE = "field-1741778607900-agpsipbof"
+
+
+def _normalize_filter_list(value) -> list[str]:
+    """Normalize a filter value to a cleaned list of non-empty strings."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if v is not None and str(v).strip()]
+
+
+def _build_contact_share_filter(filters: dict, source_merchant_id: str | None = None) -> dict:
+    """
+    Build a Mongo filter for contacts share/unshare.
+
+    Empty / unset filters have no effect. Selected filters are AND-combined.
+    """
+    contacts_filter: dict = {"indicator": "contacts"}
+    if source_merchant_id:
+        contacts_filter["merchantId"] = source_merchant_id
+
+    and_conditions: list[dict] = []
+
+    if filters.get("searchForProperty") is True:
+        and_conditions.append({f"data.{CONTACT_FIELD_SEARCH_FOR_PROPERTY}": "Yes"})
+
+    if filters.get("doesHeHaveProperty") is True:
+        and_conditions.append({f"data.{CONTACT_FIELD_DOES_HE_HAVE_PROPERTY}": "Yes"})
+
+    yes_no_fields = {
+        "taxClient": CONTACT_FIELD_TAX_CLIENT,
+        "insuranceCustomer": CONTACT_FIELD_INSURANCE_CUSTOMER,
+        "rentalCustomer": CONTACT_FIELD_RENTAL_CUSTOMER,
+        "managementClient": CONTACT_FIELD_MANAGEMENT_CLIENT,
+    }
+    for key, field_id in yes_no_fields.items():
+        value = filters.get(key)
+        if isinstance(value, str) and value.strip() in ("Yes", "No"):
+            and_conditions.append({f"data.{field_id}": value.strip()})
+
+    multi_select_fields = {
+        "contactTypes": CONTACT_FIELD_CONTACT_TYPE,
+        "leadRoles": CONTACT_FIELD_LEAD_ROLE,
+        "entryTypes": CONTACT_FIELD_ENTRY_TYPE,
+    }
+    for key, field_id in multi_select_fields.items():
+        values = _normalize_filter_list(filters.get(key))
+        if values:
+            and_conditions.append({f"data.{field_id}": {"$in": values}})
+
+    if and_conditions:
+        contacts_filter["$and"] = and_conditions
+
+    return contacts_filter
+
+
 @fastapi_app.post("/contacts/add")
 async def add_contacts(payload: dict):
     """
@@ -2573,20 +2656,13 @@ async def add_contacts(payload: dict):
     Steps:
     - Get source merchant by email → merchantId
     - Get target merchants by email → merchantIds
-    - Filter contacts where:
-        indicator = "contacts"
-        merchantId = source merchantId
-        searchForProperty = toggle
-        doesHeHaveProperty = toggle
+    - Filter contacts by indicator, merchantId, and optional field filters
     - Add target merchantIds to sharedWithMerchants
     """
     try:
         source_email = payload.get("sourceMerchantEmail")
         target_emails = payload.get("targetMerchantEmails", [])
-        filters = payload.get("filters", {})
-
-        search_for_property = filters.get("searchForProperty")
-        does_he_have_property = filters.get("doesHeHaveProperty")
+        filters = payload.get("filters", {}) or {}
 
         if not source_email or not target_emails:
             return {"error": "Source merchant email and target merchant emails are required."}
@@ -2624,24 +2700,7 @@ async def add_contacts(payload: dict):
         # -------------------------------------
         # Build contacts filter
         # -------------------------------------
-        contacts_filter = {
-            "indicator": "contacts",
-            "merchantId": source_merchant_id
-        }
-
-        and_conditions = []
-
-        # searchForProperty filter
-        if search_for_property is True:
-            and_conditions.append({"data.field-1763539699080-ku2jwh8je": "Yes"})
-
-        # doesHeHaveProperty filter
-        if does_he_have_property is True:
-            and_conditions.append({"data.field-1760945578087-1d922hj0e": "Yes"})
-
-        if and_conditions:
-            contacts_filter["$and"] = and_conditions
-
+        contacts_filter = _build_contact_share_filter(filters, source_merchant_id)
         contacts_col = prop_db.formdatas
 
         # -------------------------------------
@@ -2688,20 +2747,13 @@ async def delete_contacts(payload: dict):
     Steps:
     - Get source merchant by email → merchantId
     - Get target merchants by email → merchantIds
-    - Filter contacts where:
-        indicator = "contacts"
-        merchantId = source merchantId
-        searchForProperty = toggle
-        doesHeHaveProperty = toggle
+    - Filter contacts by indicator, optional merchantId, and optional field filters
     - Remove target merchantIds from sharedWithMerchants
     """
     try:
         source_email = payload.get("sourceMerchantEmail")
         target_emails = payload.get("targetMerchantEmails", [])
-        filters = payload.get("filters", {})
-
-        search_for_property = filters.get("searchForProperty")
-        does_he_have_property = filters.get("doesHeHaveProperty")
+        filters = payload.get("filters", {}) or {}
 
         if not target_emails:
             return {"error": "Target merchant emails are required."}
@@ -2742,19 +2794,7 @@ async def delete_contacts(payload: dict):
         # -------------------------------------
         # Build contacts filter
         # -------------------------------------
-        contacts_filter = {"indicator": "contacts"}
-        if source_merchant_id:
-            contacts_filter["merchantId"] = source_merchant_id
-
-        # Build $and conditions only if necessary
-        and_conditions = []
-        if search_for_property is True:
-            and_conditions.append({"data.field-1763539699080-ku2jwh8je": "Yes"})
-        if does_he_have_property is True:
-            and_conditions.append({"data.field-1760945578087-1d922hj0e": "Yes"})
-        if and_conditions:
-            contacts_filter["$and"] = and_conditions
-
+        contacts_filter = _build_contact_share_filter(filters, source_merchant_id)
         contacts_col = prop_db.formdatas
 
         # -------------------------------------

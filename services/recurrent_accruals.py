@@ -217,6 +217,30 @@ def _build_piped(label: str, pid: str | int) -> str:
     return f"{label}|{pid}"
 
 
+def amount_for_due_date(
+    base_amount: float,
+    start_date: date,
+    due_date: date,
+    annual_increment_percent: float | None,
+) -> float:
+    """
+    Compound annual increment every 365 days from start_date.
+
+    Due dates on/after start + N*365 days use base * (1 + pct/100) ** N.
+    """
+    base = float(base_amount)
+    pct = float(annual_increment_percent or 0)
+    if pct <= 0:
+        return round(base, 2)
+
+    days = (due_date - start_date).days
+    years = max(0, days // 365)
+    if years <= 0:
+        return round(base, 2)
+
+    return round(base * ((1 + pct / 100.0) ** years), 2)
+
+
 def advance_due_date(start_anchor: date, frequency: str, current_due: date) -> date:
     if frequency not in FREQUENCIES:
         raise ValueError(f"Unsupported frequency: {frequency}")
@@ -389,6 +413,7 @@ def build_schedules_excel(schedules: list[dict[str, Any]]) -> bytes:
                 "Trx Description": schedule.get("trxDescription") or "",
                 "Invest Greece Notes": schedule.get("notes") or "",
                 "Amount": schedule.get("amount"),
+                "Annual Increment %": schedule.get("annualIncrementPercent") or 0,
                 "Frequency": FREQUENCY_LABELS.get(frequency, frequency),
                 "Start Date": schedule.get("startDate") or "",
                 "End Date": schedule.get("endDate") or "",
@@ -631,6 +656,13 @@ async def _generate_for_period(
     contact = schedule["contact"]
     owner_pid = str(contact["pid"])
     owner_label = contact["label"]
+    start_date = _parse_iso_date(schedule["startDate"])
+    period_amount = amount_for_due_date(
+        float(schedule["amount"]),
+        start_date,
+        period_date,
+        schedule.get("annualIncrementPercent"),
+    )
     created_entries: list[dict] = []
     schedules = prop_db[SCHEDULES_COLLECTION]
 
@@ -656,7 +688,7 @@ async def _generate_for_period(
             document_type=schedule["documentType"],
             trx_description=schedule.get("trxDescription") or "",
             notes=schedule.get("notes") or "",
-            amount=float(schedule["amount"]),
+            amount=period_amount,
             due_date=period_date,
             property_label=prop["label"],
             property_pid=property_pid,
@@ -676,7 +708,7 @@ async def _generate_for_period(
             owner_pid=owner_pid,
             owner_label=owner_label,
             property_label=prop["label"],
-            amount=float(schedule["amount"]),
+            amount=period_amount,
             due_date=period_date,
             trx_description=schedule.get("trxDescription") or "",
             document_type=schedule.get("documentType") or "",
@@ -688,6 +720,7 @@ async def _generate_for_period(
             "period": period_str,
             "propertyPid": property_pid,
             "propertyLabel": prop["label"],
+            "amount": period_amount,
             "cashflowId": cashflow_id,
             "emailSent": emailed,
             "createdAt": datetime.now(timezone.utc),

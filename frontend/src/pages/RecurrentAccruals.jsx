@@ -39,6 +39,7 @@ export default function RecurrentAccruals() {
   const [trxDescription, setTrxDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [amount, setAmount] = useState("");
+  const [annualIncrementPercent, setAnnualIncrementPercent] = useState("");
   const [frequency, setFrequency] = useState("monthly");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -111,6 +112,14 @@ export default function RecurrentAccruals() {
       setCreateMessage("Enter a valid amount greater than zero.");
       return;
     }
+    let incrementNum = 0;
+    if (annualIncrementPercent !== "" && annualIncrementPercent != null) {
+      incrementNum = parseFloat(annualIncrementPercent);
+      if (!Number.isFinite(incrementNum) || incrementNum < 0) {
+        setCreateMessage("Annual increment percent must be zero or greater.");
+        return;
+      }
+    }
 
     setCreateLoading(true);
     const res = await createRecurrentAccrualSchedule({
@@ -120,6 +129,7 @@ export default function RecurrentAccruals() {
       trxDescription,
       notes,
       amount: amountNum,
+      annualIncrementPercent: incrementNum,
       frequency,
       startDate,
       endDate: endDate || null,
@@ -149,6 +159,7 @@ export default function RecurrentAccruals() {
     setProperties([]);
     setNotes("");
     setAmount("");
+    setAnnualIncrementPercent("");
     setEndDate("");
   };
 
@@ -224,7 +235,7 @@ export default function RecurrentAccruals() {
             onChange={setProperties}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Document type
@@ -252,6 +263,23 @@ export default function RecurrentAccruals() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Annual increment %
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={annualIncrementPercent}
+                onChange={(e) => setAnnualIncrementPercent(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Optional, e.g. 5"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Compound every 365 days from first accrual date. Leave empty for none.
+              </p>
             </div>
           </div>
 
@@ -441,7 +469,14 @@ export default function RecurrentAccruals() {
                         <td className="px-3 py-2 align-top">
                           {row.trxDescription || "—"}
                         </td>
-                        <td className="px-3 py-2 align-top">{row.amount}</td>
+                        <td className="px-3 py-2 align-top">
+                          <div>{row.amount}</div>
+                          {row.annualIncrementPercent > 0 && (
+                            <div className="text-xs text-gray-500">
+                              +{row.annualIncrementPercent}% / yr
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-2 align-top">{row.frequency}</td>
                         <td className="px-3 py-2 align-top">{row.nextDueDate}</td>
                         <td className="px-3 py-2 align-top capitalize">{row.status}</td>
@@ -502,7 +537,8 @@ export default function RecurrentAccruals() {
                               {(row.generated || []).map((g, idx) => (
                                 <li key={`${g.cashflowId}-${idx}`} className="flex items-center gap-2">
                                   <span>
-                                    {g.period} · {g.propertyLabel || g.propertyPid} ·{" "}
+                                    {g.period} · {g.propertyLabel || g.propertyPid}
+                                    {g.amount != null ? ` · €${g.amount}` : ""} ·{" "}
                                     {g.cashflowId}
                                   </span>
                                   {g.cashflowId && (
