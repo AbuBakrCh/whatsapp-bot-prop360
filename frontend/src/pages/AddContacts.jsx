@@ -24,8 +24,8 @@ const LEAD_ROLE_OPTIONS = [
 const ENTRY_TYPE_OPTIONS = ["Individual", "Corporate"];
 
 const emptyFilters = () => ({
-  searchForProperty: false,
-  doesHeHaveProperty: false,
+  searchForProperty: "",
+  doesHeHaveProperty: "",
   taxClient: "",
   insuranceCustomer: "",
   rentalCustomer: "",
@@ -138,8 +138,8 @@ export default function AddingContacts() {
           .map((email) => email.trim().toLowerCase())
           .filter(Boolean),
         filters: {
-          searchForProperty: filters.searchForProperty,
-          doesHeHaveProperty: filters.doesHeHaveProperty,
+          searchForProperty: filters.searchForProperty || undefined,
+          doesHeHaveProperty: filters.doesHeHaveProperty || undefined,
           taxClient: filters.taxClient || undefined,
           insuranceCustomer: filters.insuranceCustomer || undefined,
           rentalCustomer: filters.rentalCustomer || undefined,
@@ -215,27 +215,17 @@ export default function AddingContacts() {
       </p>
 
       <div className="flex flex-col gap-4 mb-6">
-        <label className="flex items-center gap-2 text-gray-700">
-          <input
-            type="checkbox"
-            checked={filters.searchForProperty}
-            onChange={(e) => updateFilter("searchForProperty", e.target.checked)}
-            className="w-4 h-4"
-          />
-          Search For Property?
-        </label>
-
-        <label className="flex items-center gap-2 text-gray-700">
-          <input
-            type="checkbox"
-            checked={filters.doesHeHaveProperty}
-            onChange={(e) => updateFilter("doesHeHaveProperty", e.target.checked)}
-            className="w-4 h-4"
-          />
-          Does He Have Property?
-        </label>
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          <YesNoSelect
+            label="Search For Property?"
+            value={filters.searchForProperty}
+            onChange={(v) => updateFilter("searchForProperty", v)}
+          />
+          <YesNoSelect
+            label="Does He Have Property?"
+            value={filters.doesHeHaveProperty}
+            onChange={(v) => updateFilter("doesHeHaveProperty", v)}
+          />
           <YesNoSelect
             label="Tax Client"
             value={filters.taxClient}

@@ -2615,13 +2615,9 @@ def _build_contact_share_filter(filters: dict, source_merchant_id: str | None = 
 
     and_conditions: list[dict] = []
 
-    if filters.get("searchForProperty") is True:
-        and_conditions.append({f"data.{CONTACT_FIELD_SEARCH_FOR_PROPERTY}": "Yes"})
-
-    if filters.get("doesHeHaveProperty") is True:
-        and_conditions.append({f"data.{CONTACT_FIELD_DOES_HE_HAVE_PROPERTY}": "Yes"})
-
     yes_no_fields = {
+        "searchForProperty": CONTACT_FIELD_SEARCH_FOR_PROPERTY,
+        "doesHeHaveProperty": CONTACT_FIELD_DOES_HE_HAVE_PROPERTY,
         "taxClient": CONTACT_FIELD_TAX_CLIENT,
         "insuranceCustomer": CONTACT_FIELD_INSURANCE_CUSTOMER,
         "rentalCustomer": CONTACT_FIELD_RENTAL_CUSTOMER,
