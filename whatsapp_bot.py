@@ -17,7 +17,6 @@ from time import time
 from typing import Any
 from urllib.parse import quote
 
-import google.generativeai as genai
 import httpx
 import math
 import numpy as np
@@ -104,9 +103,10 @@ from services.operator_activity import (
 from services.accrual_payment_matching import fetch_accrual_payment_matches
 from services.cashflow_document_extractor import (
     DOCUMENT_TYPE_INVOICE,
-    _extract_invoice_with_gemini,
+    _extract_invoice,
     build_invoice_cashflow_data,
     extract_cashflow_data_from_document,
+    generate_text_from_document,
     normalize_document_type,
 )
 from services.contact_from_invoice import (
@@ -159,10 +159,6 @@ global_top_k = {"value": 5}
 global_temperature = {"value": 0.2}
 model_name = "text-embedding-3-small"
 processed_message_ids = set()
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-gen_model = genai.GenerativeModel("gemini-2.5-flash")
 
 PROP360_URL = "https://prop360.pro/api/merchant/form_data"
 PROP360_INTEGRATION_BASE_URL = "https://prop360.pro/api/integration"
@@ -1209,18 +1205,8 @@ def extract_csv_from_image(file_bytes: bytes, fields_to_extract: list[str]):
     file_type = get_file_type(file_bytes)
     if not file_type:
         raise ValueError("Cannot determine image type")
-
-    if file_type in ["jpeg", "jpg", "png"]:
-        mime = f"image/{file_type if file_type != 'jpg' else 'jpeg'}"
-    elif file_type == "pdf":
-        mime = "application/pdf"
-    else:
+    if file_type not in ("jpeg", "jpg", "png", "pdf"):
         raise ValueError(f"Unsupported file type: {file_type}")
-
-    encoded = {
-        "mime_type": mime,
-        "data": file_bytes
-    }
 
     fields_list = ", ".join(fields_to_extract)
 
@@ -1234,12 +1220,11 @@ def extract_csv_from_image(file_bytes: bytes, fields_to_extract: list[str]):
     - Every row must match this column structure.
     - If a field is missing, leave it blank.
     - Dates must be normalized to YYYY-MM-DD format.
-    - In numbers, decimal must be shown with . instead of , 
+    - In numbers, decimal must be shown with . instead of ,
     - Preserve the content of each field exactly as it appears in the document.
     """
 
-    response = gen_model.generate_content([prompt, encoded])
-    return response.text.strip()
+    return generate_text_from_document(prompt, file_bytes)
 
 def submit_to_prop360(row: dict, auth_token: str, mapping: dict):
     """
@@ -1362,8 +1347,8 @@ async def extract_cashflow_from_document(
         contact_result = None
 
         if normalized == DOCUMENT_TYPE_INVOICE:
-            # Single Gemini pass: cashflow fields + issuer contact ensure
-            invoice_extracted = _extract_invoice_with_gemini(
+            # Single OpenAI vision pass: cashflow fields + issuer contact ensure
+            invoice_extracted = _extract_invoice(
                 file_bytes, filename=file.filename
             )
             data = build_invoice_cashflow_data(invoice_extracted)

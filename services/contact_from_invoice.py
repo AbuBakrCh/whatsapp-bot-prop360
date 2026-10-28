@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from services.cashflow_document_extractor import (
-    _extract_invoice_with_gemini,
+    _extract_invoice,
     detect_file_type,
 )
 
@@ -134,7 +134,7 @@ def _phone_match_pattern(phone: str) -> str | None:
 
 
 def issuer_fields_from_invoice_extraction(extracted: dict[str, Any]) -> dict[str, str]:
-    """Map a raw Gemini invoice extraction dict to contact issuer fields."""
+    """Map a raw invoice extraction dict to contact issuer fields."""
     return {
         "issuer": restore_issuer_name_punctuation(extracted.get("invoice_issuer")),
         "taxId": _preserve_printed_text(extracted.get("invoice_issuer_tax_id")),
@@ -148,14 +148,14 @@ def issuer_fields_from_invoice_extraction(extracted: dict[str, Any]) -> dict[str
 def extract_issuer_from_invoice(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, str]:
-    """Extract issuer fields from an invoice PDF/image via Gemini."""
+    """Extract issuer fields from an invoice PDF/image via OpenAI vision."""
     file_type = detect_file_type(file_bytes, filename)
     if file_type is None or file_type not in SUPPORTED_FILE_TYPES:
         raise ValueError(
             "File type not supported. Upload a PDF, JPEG, or PNG invoice."
         )
 
-    extracted = _extract_invoice_with_gemini(file_bytes, filename=filename)
+    extracted = _extract_invoice(file_bytes, filename=filename)
     return issuer_fields_from_invoice_extraction(extracted)
 
 

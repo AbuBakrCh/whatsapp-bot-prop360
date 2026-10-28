@@ -1,10 +1,11 @@
 """
 Extract Prop360 cashflow form `data` fields from utility bill documents (PDF/image).
-Uses Gemini vision to read the document and maps results to Prop360 field IDs.
+Uses OpenAI vision to read the document and maps results to Prop360 field IDs.
 """
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -13,8 +14,11 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import google.generativeai as genai
+import openai
 from PIL import Image
+
+EXTRACTION_MODEL = os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-4o")
+_openai_client: openai.OpenAI | None = None
 
 DOCUMENT_TYPE_ELECTRICITY_BILL = "Electricity Bill"
 DOCUMENT_TYPE_COMMON_EXPENSES = "Common Expenses"
@@ -455,9 +459,6 @@ INVOICE_EXTRACTION_SCHEMA = {
     ),
 }
 
-_gen_model: genai.GenerativeModel | None = None
-
-
 def normalize_document_type(document_type: str) -> str | None:
     key = re.sub(r"[-_]+", " ", document_type.strip().lower())
     key = re.sub(r"\s+", " ", key)
@@ -478,15 +479,14 @@ def normalize_document_type(document_type: str) -> str | None:
     return None
 
 
-def _get_model() -> genai.GenerativeModel:
-    global _gen_model
-    if _gen_model is None:
-        api_key = os.getenv("GEMINI_API_KEY")
+def _get_openai_client() -> openai.OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY is not configured")
-        genai.configure(api_key=api_key)
-        _gen_model = genai.GenerativeModel("gemini-2.5-flash")
-    return _gen_model
+            raise ValueError("OPENAI_API_KEY is not configured")
+        _openai_client = openai.OpenAI(api_key=api_key)
+    return _openai_client
 
 
 def detect_file_type(file_bytes: bytes, filename: str | None = None) -> str | None:
@@ -508,6 +508,61 @@ def _build_mime(file_type: str) -> str:
     if file_type == "pdf":
         return "application/pdf"
     raise ValueError(f"Unsupported file type: {file_type}")
+
+
+def _document_content_part(
+    file_bytes: bytes,
+    file_type: str,
+    filename: str | None = None,
+) -> dict[str, Any]:
+    """Build an OpenAI chat content part for an image or PDF."""
+    b64 = base64.b64encode(file_bytes).decode("ascii")
+    if file_type == "pdf":
+        pdf_name = filename if filename and filename.lower().endswith(".pdf") else "document.pdf"
+        return {
+            "type": "file",
+            "file": {
+                "filename": pdf_name,
+                "file_data": f"data:application/pdf;base64,{b64}",
+            },
+        }
+    mime = _build_mime(file_type)
+    return {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:{mime};base64,{b64}",
+            "detail": "high",
+        },
+    }
+
+
+def generate_text_from_document(
+    prompt: str,
+    file_bytes: bytes,
+    *,
+    filename: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.0,
+) -> str:
+    """Send a prompt plus PDF/image to OpenAI vision and return plain text."""
+    file_type = detect_file_type(file_bytes, filename)
+    if not file_type:
+        raise ValueError("Cannot determine document type. Upload a PDF, JPEG, or PNG.")
+
+    response = _get_openai_client().chat.completions.create(
+        model=model or EXTRACTION_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    _document_content_part(file_bytes, file_type, filename),
+                ],
+            }
+        ],
+        temperature=temperature,
+    )
+    return (response.choices[0].message.content or "").strip()
 
 
 def _strip_json_fences(text: str) -> str:
@@ -764,7 +819,7 @@ def _omit_unextracted_fields(data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _extract_with_gemini(
+def _extract_with_openai(
     file_bytes: bytes,
     *,
     filename: str | None,
@@ -772,15 +827,6 @@ def _extract_with_gemini(
     document_description: str,
     extra_rules: str = "",
 ) -> dict[str, Any]:
-    file_type = detect_file_type(file_bytes, filename)
-    if not file_type:
-        raise ValueError("Cannot determine document type. Upload a PDF, JPEG, or PNG.")
-
-    encoded = {
-        "mime_type": _build_mime(file_type),
-        "data": file_bytes,
-    }
-
     schema_lines = "\n".join(f'  "{key}": "{desc}"' for key, desc in schema.items())
     prompt = f"""
 You are a data extraction engine for {document_description}.
@@ -800,18 +846,19 @@ Rules:
 {extra_rules}
 """
 
-    response = _get_model().generate_content([prompt, encoded])
-    raw = _strip_json_fences(response.text or "")
+    raw = _strip_json_fences(
+        generate_text_from_document(prompt, file_bytes, filename=filename)
+    )
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Failed to parse extraction response as JSON: {raw[:500]}") from exc
 
 
-def _extract_electricity_bill_with_gemini(
+def _extract_electricity_bill(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, Any]:
-    return _extract_with_gemini(
+    return _extract_with_openai(
         file_bytes,
         filename=filename,
         schema=ELECTRICITY_BILL_EXTRACTION_SCHEMA,
@@ -829,10 +876,10 @@ def _extract_electricity_bill_with_gemini(
     )
 
 
-def _extract_common_expenses_with_gemini(
+def _extract_common_expenses(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, Any]:
-    return _extract_with_gemini(
+    return _extract_with_openai(
         file_bytes,
         filename=filename,
         schema=COMMON_EXPENSES_EXTRACTION_SCHEMA,
@@ -848,10 +895,10 @@ def _extract_common_expenses_with_gemini(
     )
 
 
-def _extract_water_bill_with_gemini(
+def _extract_water_bill(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, Any]:
-    return _extract_with_gemini(
+    return _extract_with_openai(
         file_bytes,
         filename=filename,
         schema=WATER_BILL_EXTRACTION_SCHEMA,
@@ -870,10 +917,10 @@ def _extract_water_bill_with_gemini(
     )
 
 
-def _extract_bank_receipt_with_gemini(
+def _extract_bank_receipt(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, Any]:
-    return _extract_with_gemini(
+    return _extract_with_openai(
         file_bytes,
         filename=filename,
         schema=BANK_RECEIPT_EXTRACTION_SCHEMA,
@@ -894,10 +941,10 @@ def _extract_bank_receipt_with_gemini(
     )
 
 
-def _extract_invoice_with_gemini(
+def _extract_invoice(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, Any]:
-    return _extract_with_gemini(
+    return _extract_with_openai(
         file_bytes,
         filename=filename,
         schema=INVOICE_EXTRACTION_SCHEMA,
@@ -923,10 +970,10 @@ def _extract_invoice_with_gemini(
     )
 
 
-def _extract_e_paravolo_with_gemini(
+def _extract_e_paravolo(
     file_bytes: bytes, filename: str | None = None
 ) -> dict[str, Any]:
-    return _extract_with_gemini(
+    return _extract_with_openai(
         file_bytes,
         filename=filename,
         schema=E_PARAVOLO_EXTRACTION_SCHEMA,
@@ -1239,27 +1286,27 @@ def extract_cashflow_data_from_document(
         )
 
     if normalized == DOCUMENT_TYPE_ELECTRICITY_BILL:
-        extracted = _extract_electricity_bill_with_gemini(file_bytes, filename)
+        extracted = _extract_electricity_bill(file_bytes, filename)
         return build_electricity_bill_cashflow_data(extracted)
 
     if normalized == DOCUMENT_TYPE_COMMON_EXPENSES:
-        extracted = _extract_common_expenses_with_gemini(file_bytes, filename)
+        extracted = _extract_common_expenses(file_bytes, filename)
         return build_common_expenses_cashflow_data(extracted)
 
     if normalized == DOCUMENT_TYPE_WATER_BILL:
-        extracted = _extract_water_bill_with_gemini(file_bytes, filename)
+        extracted = _extract_water_bill(file_bytes, filename)
         return build_water_bill_cashflow_data(extracted)
 
     if normalized == DOCUMENT_TYPE_BANK_RECEIPT:
-        extracted = _extract_bank_receipt_with_gemini(file_bytes, filename)
+        extracted = _extract_bank_receipt(file_bytes, filename)
         return build_bank_receipt_cashflow_data(extracted)
 
     if normalized == DOCUMENT_TYPE_INVOICE:
-        extracted = _extract_invoice_with_gemini(file_bytes, filename)
+        extracted = _extract_invoice(file_bytes, filename)
         return build_invoice_cashflow_data(extracted)
 
     if normalized == DOCUMENT_TYPE_E_PARAVOLO:
-        extracted = _extract_e_paravolo_with_gemini(file_bytes, filename)
+        extracted = _extract_e_paravolo(file_bytes, filename)
         return build_e_paravolo_cashflow_data(extracted)
 
     raise ValueError(f"Document type '{document_type}' is not supported.")
