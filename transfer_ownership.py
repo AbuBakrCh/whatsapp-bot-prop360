@@ -81,7 +81,7 @@ async def transfer_ownership(prop_db):
     api_docs_result = await formdatas_col.update_many(
         {
             "metadata.createdAt": {"$gt": CUTOFF_DATE},
-            "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo"]},
+            "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo", "custom-mh41lln9v"]},
             "metadata.createdBy": {"$regex": "^api-token-"},
             "metadata.apiShared": {"$ne": True},
             "metadata.ownershipTransferred": {"$ne": True},
@@ -158,7 +158,7 @@ async def transfer_ownership(prop_db):
         {
             "$and": [
                 {"metadata.createdAt": {"$gt": CUTOFF_DATE}},
-                {"indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo"]}},
+                {"indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo", "custom-mh41lln9v"]}},
                 {"$or": [
                     {"metadata.createdBy": {"$not": {"$regex": "^api-token-"}}},
                     {"metadata.createdBy": {"$exists": False}}
