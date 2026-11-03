@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { searchGroupUsers } from "../api";
 
-export default function UserSearchCombobox({ selectedUsers, onChange }) {
+export default function UserSearchCombobox({
+  selectedUsers,
+  onChange,
+  label = "Add members",
+  requireFirebaseId = false,
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -32,7 +37,10 @@ export default function UserSearchCombobox({ selectedUsers, onChange }) {
       const res = await searchGroupUsers(trimmed, 10, excludeIds);
 
       if (!res.error) {
-        setResults(res.data || []);
+        const next = (res.data || []).filter((user) =>
+          requireFirebaseId ? Boolean(user.firebaseId) : true
+        );
+        setResults(next);
         setIsOpen(true);
       } else {
         setResults([]);
@@ -41,9 +49,10 @@ export default function UserSearchCombobox({ selectedUsers, onChange }) {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, selectedUsers]);
+  }, [query, selectedUsers, requireFirebaseId]);
 
   const handleSelect = (user) => {
+    if (requireFirebaseId && !user.firebaseId) return;
     if (selectedUsers.some((u) => u._id === user._id)) return;
     onChange([...selectedUsers, user]);
     setQuery("");
@@ -58,7 +67,7 @@ export default function UserSearchCombobox({ selectedUsers, onChange }) {
   return (
     <div ref={containerRef} className="relative">
       <label className="block text-sm font-medium text-gray-700 mb-1">
-        Add members
+        {label}
       </label>
       <input
         type="text"

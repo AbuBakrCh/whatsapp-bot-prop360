@@ -2102,6 +2102,119 @@ async def get_prompt(prompt_id: str):
         return {"error": str(e)}
 
 
+# Property form field IDs used when sharing / unsharing properties
+PROPERTY_FIELD_CITY = "field-1744021694415-n0vk8fy4r"
+PROPERTY_FIELD_DIVISION = "field-1756930628075-gz12s60tm"
+PROPERTY_FIELD_PROPERTY_MANAGEMENT = "field-1755111553916-v22m48g2z"
+PROPERTY_FIELD_TAX_MANAGEMENT = "field-1755111569931-9w4h1a56v"
+PROPERTY_FIELD_PURCHASING_DATE = "field-1756463495411-vnfjwsqhj"
+PROPERTY_FIELD_LEASE_STATUS = "field-1755532100559-yescnov3v"
+PROPERTY_FIELD_INSURANCE_STATUS = "field-1756930843498-ei8u0xcy8"
+
+
+def _normalize_filter_list(value) -> list[str]:
+    """Normalize a filter value to a cleaned list of non-empty strings."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if v is not None and str(v).strip()]
+
+
+def _build_property_share_filter(filters: dict, source_merchant_id: str | None = None) -> dict:
+    """
+    Build a Mongo filter for properties share/unshare.
+
+    Empty / unset filters have no effect. Selected filters are AND-combined.
+    """
+    filters = filters or {}
+    prop_filter: dict = {"indicator": "properties"}
+    if source_merchant_id:
+        prop_filter["merchantId"] = source_merchant_id
+
+    and_conditions: list[dict] = []
+
+    is_public = filters.get("isPublic")
+    if isinstance(is_public, bool):
+        and_conditions.append({"isPublic": is_public})
+    elif isinstance(is_public, str) and is_public.strip().lower() in ("true", "false"):
+        and_conditions.append({"isPublic": is_public.strip().lower() == "true"})
+
+    created_by_mode = (filters.get("createdByMode") or "").strip()
+    if created_by_mode == "api":
+        and_conditions.append({"metadata.createdBy": {"$regex": "^api-"}})
+    elif created_by_mode == "owners":
+        owner_ids = _normalize_filter_list(filters.get("createdByOwnerIds"))
+        if owner_ids:
+            and_conditions.append({"metadata.createdBy": {"$in": owner_ids}})
+
+    cities = _normalize_filter_list(filters.get("cities") or filters.get("city"))
+    if cities:
+        and_conditions.append({f"data.{PROPERTY_FIELD_CITY}": {"$in": cities}})
+
+    division = filters.get("division")
+    if isinstance(division, str) and division.strip():
+        and_conditions.append({f"data.{PROPERTY_FIELD_DIVISION}": division.strip()})
+
+    yes_no_fields = {
+        "propertyManagement": PROPERTY_FIELD_PROPERTY_MANAGEMENT,
+        "taxManagement": PROPERTY_FIELD_TAX_MANAGEMENT,
+    }
+    for key, field_id in yes_no_fields.items():
+        value = filters.get(key)
+        if isinstance(value, str) and value.strip() in ("Yes", "No"):
+            and_conditions.append({f"data.{field_id}": value.strip()})
+
+    insurance_status = filters.get("insuranceStatus")
+    if isinstance(insurance_status, str) and insurance_status.strip() in (
+        "Insured",
+        "Not Insured",
+    ):
+        and_conditions.append(
+            {f"data.{PROPERTY_FIELD_INSURANCE_STATUS}": insurance_status.strip()}
+        )
+
+    lease_status = filters.get("leaseStatus")
+    if isinstance(lease_status, str) and lease_status.strip():
+        and_conditions.append(
+            {f"data.{PROPERTY_FIELD_LEASE_STATUS}": lease_status.strip()}
+        )
+
+    purchasing_date_mode = (filters.get("purchasingDateMode") or "").strip()
+    purchasing_field = f"data.{PROPERTY_FIELD_PURCHASING_DATE}"
+    if purchasing_date_mode == "empty":
+        and_conditions.append(
+            {
+                "$or": [
+                    {purchasing_field: {"$exists": False}},
+                    {purchasing_field: None},
+                    {purchasing_field: ""},
+                ]
+            }
+        )
+    elif purchasing_date_mode == "notEmpty":
+        and_conditions.append(
+            {purchasing_field: {"$exists": True, "$nin": [None, ""]}}
+        )
+    elif purchasing_date_mode == "range":
+        date_cond: dict = {}
+        after = filters.get("purchasingDateAfter")
+        before = filters.get("purchasingDateBefore")
+        if isinstance(after, str) and after.strip():
+            date_cond["$gte"] = after.strip()[:10]
+        if isinstance(before, str) and before.strip():
+            date_cond["$lte"] = before.strip()[:10]
+        if date_cond:
+            and_conditions.append({purchasing_field: date_cond})
+
+    if and_conditions:
+        prop_filter["$and"] = and_conditions
+
+    return prop_filter
+
+
 @fastapi_app.post("/properties/add")
 async def add_properties(payload: dict):
     """
@@ -2110,21 +2223,13 @@ async def add_properties(payload: dict):
     Steps:
     - Get source merchant by email → get merchantId
     - Get all target merchants by email → extract their merchantIds
-    - Filter properties where:
-        merchantId = source merchantId
-        city = given city
-        division = given division
-        isPublic = published toggle
+    - Filter properties by indicator, merchantId, and optional field filters
     - Add target merchantIds into `sharedWithMerchants`
     """
     try:
         source_email = payload.get("sourceMerchantEmail")
         target_emails = payload.get("targetMerchantEmails", [])
-        filters = payload.get("filters", {})
-
-        city = filters.get("city")
-        division = filters.get("division")
-        published = filters.get("published")
+        filters = payload.get("filters", {}) or {}
 
         if not source_email or not target_emails:
             return {"error": "Source merchant email and target merchant emails are required."}
@@ -2164,18 +2269,7 @@ async def add_properties(payload: dict):
         # -------------------------------------
         # Build property filter
         # -------------------------------------
-        prop_filter = {"merchantId": source_merchant_id}
-
-        if city:
-            prop_filter["data.field-1744021694415-n0vk8fy4r"] = city
-
-        if division:
-            prop_filter["data.field-1756930628075-gz12s60tm"] = division
-
-        if published:
-            prop_filter["isPublic"] = bool(published)
-
-        prop_filter["indicator"] = "properties"
+        prop_filter = _build_property_share_filter(filters, source_merchant_id)
         properties_col = prop_db.formdatas
 
         # -------------------------------------
@@ -2223,21 +2317,13 @@ async def delete_properties(payload: dict):
     Steps:
     - (Optional) Get source merchant by email → merchantId
     - Get all target merchants by email → extract their merchantIds
-    - Filter properties where:
-        merchantId = source merchantId (if provided)
-        city = given city
-        division = given division
-        isPublic = published toggle
+    - Filter properties by indicator, merchantId (if provided), and optional field filters
     - Remove target merchantIds from `sharedWithMerchants`
     """
     try:
         source_email = payload.get("sourceMerchantEmail")
         target_emails = payload.get("targetMerchantEmails", [])
-        filters = payload.get("filters", {})
-
-        city = filters.get("city")
-        division = filters.get("division")
-        published = filters.get("published")
+        filters = payload.get("filters", {}) or {}
 
         if not target_emails:
             return {"error": "Target merchant emails are required."}
@@ -2280,22 +2366,7 @@ async def delete_properties(payload: dict):
         # -------------------------------------
         # Build property filter
         # -------------------------------------
-        prop_filter = {
-            "indicator": "properties"
-        }
-
-        if source_merchant_id:
-            prop_filter["merchantId"] = source_merchant_id
-
-        if city:
-            prop_filter["data.field-1744021694415-n0vk8fy4r"] = city
-
-        if division:
-            prop_filter["data.field-1756930628075-gz12s60tm"] = division
-
-        if published:
-            prop_filter["isPublic"] = bool(published)
-
+        prop_filter = _build_property_share_filter(filters, source_merchant_id)
         properties_col = prop_db.formdatas
 
         # -------------------------------------
@@ -2575,17 +2646,6 @@ CONTACT_FIELD_MANAGEMENT_CLIENT = "field-1788724213248-tt29cb8og"
 CONTACT_FIELD_CONTACT_TYPE = "field-1791104173058-f31hdqyts"
 CONTACT_FIELD_LEAD_ROLE = "field-1774946423103-f6s52ediy"
 CONTACT_FIELD_ENTRY_TYPE = "field-1741778607900-agpsipbof"
-
-
-def _normalize_filter_list(value) -> list[str]:
-    """Normalize a filter value to a cleaned list of non-empty strings."""
-    if value is None:
-        return []
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list):
-        return []
-    return [str(v).strip() for v in value if v is not None and str(v).strip()]
 
 
 def _build_contact_share_filter(filters: dict, source_merchant_id: str | None = None) -> dict:
@@ -4566,7 +4626,7 @@ async def search_group_users(
         cursor = (
             users_col.find(
                 user_filter,
-                {"displayName": 1, "email": 1, "merchantId": 1},
+                {"displayName": 1, "email": 1, "merchantId": 1, "firebaseId": 1},
             )
             .sort("displayName", 1)
             .limit(limit)
@@ -4579,6 +4639,7 @@ async def search_group_users(
                 "displayName": user.get("displayName") or "",
                 "email": user.get("email") or "",
                 "merchantId": user.get("merchantId") or "",
+                "firebaseId": user.get("firebaseId") or "",
             })
 
         return {"data": results}
