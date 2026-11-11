@@ -43,6 +43,7 @@ import JobControl from './JobControl'
 import ExpiryJobsControl from './ExpiryJobsControl'
 import JobEmailRecipientsControl from './JobEmailRecipientsControl'
 import RecurrentAccruals from './RecurrentAccruals'
+import BankStatementImport from './BankStatementImport'
 
 const tools = [
   {
@@ -172,6 +173,14 @@ const tools = [
     icon: Repeat,
     group: 'Finance',
     render: () => <RecurrentAccruals />,
+  },
+  {
+    id: 'bank-statement-import',
+    label: 'Bank Statement Import',
+    description: 'Import Optima Excel statements into Bank Transaction cashflows',
+    icon: FileUp,
+    group: 'Finance',
+    render: () => <BankStatementImport />,
   },
   {
     id: 'generate-invoice',

@@ -861,3 +861,149 @@ export async function updateRecurrentAccrualSchedule(scheduleId, payload) {
     };
   }
 }
+
+function bankImportError(err, fallback) {
+  return {
+    error:
+      err.response?.data?.error ||
+      err.response?.data?.detail ||
+      fallback,
+  };
+}
+
+export async function listBankImportAccounts() {
+  try {
+    const response = await axios.get(`${BASE}/bank-imports/accounts`);
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to load bank accounts");
+  }
+}
+
+export async function createBankImportAccount(payload) {
+  try {
+    const response = await axios.post(`${BASE}/bank-imports/accounts`, payload);
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to create account");
+  }
+}
+
+export async function listBankImportPayees() {
+  try {
+    const response = await axios.get(`${BASE}/bank-imports/payees`);
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to load payees");
+  }
+}
+
+export async function createBankImportPayee(payload) {
+  try {
+    const response = await axios.post(`${BASE}/bank-imports/payees`, payload);
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to create payee");
+  }
+}
+
+export async function deleteBankImportPayee(payeeId) {
+  try {
+    const response = await axios.delete(
+      `${BASE}/bank-imports/payees/${encodeURIComponent(payeeId)}`
+    );
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to delete payee");
+  }
+}
+
+export async function getBankImportTrxDescriptions() {
+  try {
+    const response = await axios.get(`${BASE}/bank-imports/trx-descriptions`);
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to load categories");
+  }
+}
+
+export async function listBankImports() {
+  try {
+    const response = await axios.get(`${BASE}/bank-imports`);
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to list imports");
+  }
+}
+
+export async function uploadBankImport(accountId, file, savedBy = "") {
+  try {
+    const formData = new FormData();
+    formData.append("accountId", accountId);
+    formData.append("file", file);
+    if (savedBy) formData.append("savedBy", savedBy);
+    const response = await axios.post(`${BASE}/bank-imports/upload`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to upload statement");
+  }
+}
+
+export async function getBankImport(importId) {
+  try {
+    const response = await axios.get(
+      `${BASE}/bank-imports/${encodeURIComponent(importId)}`
+    );
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to load import");
+  }
+}
+
+export async function deleteBankImport(importId) {
+  try {
+    const response = await axios.delete(
+      `${BASE}/bank-imports/${encodeURIComponent(importId)}`
+    );
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to delete import");
+  }
+}
+
+export async function patchBankImport(importId, payload) {
+  try {
+    const response = await axios.patch(
+      `${BASE}/bank-imports/${encodeURIComponent(importId)}`,
+      payload
+    );
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to update import");
+  }
+}
+
+export async function saveBankImport(importId, savedBy = "") {
+  try {
+    const response = await axios.post(
+      `${BASE}/bank-imports/${encodeURIComponent(importId)}/save`,
+      { savedBy }
+    );
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to save import");
+  }
+}
+
+export async function createBankImportContact(name) {
+  try {
+    const response = await axios.post(`${BASE}/bank-imports/contacts`, {
+      name,
+    });
+    return response.data;
+  } catch (err) {
+    return bankImportError(err, "Failed to create contact");
+  }
+}

@@ -59,11 +59,13 @@ export default function ContactSearchCombobox({
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {label ? (
+        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      ) : null}
       {selectedContact ? (
-        <div className="flex items-center gap-2 border border-green-200 bg-green-50 rounded-lg px-3 py-2">
+        <div className="flex items-start gap-2 border border-green-200 bg-green-50 rounded-lg px-3 py-2">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-800 truncate">
+            <p className="text-sm font-medium text-gray-800 whitespace-normal break-words">
               {selectedContact.label}
             </p>
             <p className="text-xs text-gray-500">PID {selectedContact.pid}</p>

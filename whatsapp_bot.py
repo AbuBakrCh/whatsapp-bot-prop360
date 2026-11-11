@@ -75,6 +75,22 @@ from services.recurrent_accruals import (
     search_contacts,
     search_properties,
 )
+from services.bank_statement_import import (
+    create_import_session,
+    create_simple_contact,
+    delete_import,
+    delete_payee,
+    ensure_default_accounts,
+    ensure_default_payees,
+    get_import,
+    list_accounts,
+    list_imports,
+    list_payees,
+    patch_import_rows,
+    save_import,
+    upsert_account,
+    upsert_payee,
+)
 from ide_expiry_job import start_ide_expiry_scheduler
 from lease_expiry_job import start_lease_expiry_scheduler
 from passport_expiry_job import start_passport_expiry_scheduler
@@ -450,8 +466,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#df = load_dataset_from_google_sheet(SHEET_ID)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -1278,6 +1294,180 @@ async def list_files_in_folder(folder_id: str):
     async with httpx.AsyncClient() as client:
         res = await client.get(url)
         return res.json().get("files", [])
+
+@fastapi_app.get("/bank-imports/accounts")
+async def bank_imports_list_accounts():
+    await ensure_default_accounts(db)
+    return {"accounts": await list_accounts(db)}
+
+
+@fastapi_app.post("/bank-imports/accounts")
+async def bank_imports_create_account(payload: dict = Body(...)):
+    await ensure_default_accounts(db)
+    try:
+        account = await upsert_account(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"account": account}
+
+
+@fastapi_app.patch("/bank-imports/accounts/{account_id}")
+async def bank_imports_update_account(account_id: str, payload: dict = Body(...)):
+    try:
+        account = await upsert_account(db, payload, account_id=account_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"account": account}
+
+
+@fastapi_app.get("/bank-imports/payees")
+async def bank_imports_list_payees():
+    await ensure_default_payees(db)
+    return {"payees": await list_payees(db)}
+
+
+@fastapi_app.post("/bank-imports/payees")
+async def bank_imports_create_payee(payload: dict = Body(...)):
+    await ensure_default_payees(db)
+    try:
+        payee = await upsert_payee(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"payee": payee}
+
+
+@fastapi_app.patch("/bank-imports/payees/{payee_id}")
+async def bank_imports_update_payee(payee_id: str, payload: dict = Body(...)):
+    try:
+        payee = await upsert_payee(db, payload, payee_id=payee_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"payee": payee}
+
+
+@fastapi_app.delete("/bank-imports/payees/{payee_id}")
+async def bank_imports_delete_payee(payee_id: str):
+    try:
+        await delete_payee(db, payee_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@fastapi_app.get("/bank-imports/trx-descriptions")
+async def bank_imports_trx_descriptions():
+    return {"trxDescriptions": TRX_DESCRIPTIONS}
+
+
+@fastapi_app.get("/bank-imports")
+async def bank_imports_list(limit: int = Query(30, ge=1, le=100)):
+    return {"imports": await list_imports(db, limit=limit)}
+
+
+@fastapi_app.post("/bank-imports/upload")
+async def bank_imports_upload(
+    accountId: str = Form(...),
+    file: UploadFile = File(...),
+    savedBy: str = Form(""),
+):
+    await ensure_default_accounts(db)
+    accounts = await list_accounts(db)
+    account = next((a for a in accounts if a["id"] == accountId), None)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    filename = file.filename or "statement.xlsx"
+    try:
+        session = await create_import_session(
+            db,
+            prop_db,
+            account=account,
+            filename=filename,
+            file_bytes=file_bytes,
+            saved_by=(savedBy or "").strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"import": session}
+
+
+@fastapi_app.get("/bank-imports/{import_id}")
+async def bank_imports_get(import_id: str):
+    try:
+        session = await get_import(db, import_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid import id.")
+    if not session:
+        raise HTTPException(status_code=404, detail="Import not found.")
+    return {"import": session}
+
+
+
+@fastapi_app.delete("/bank-imports/{import_id}")
+async def bank_imports_delete(import_id: str):
+    try:
+        deleted = await delete_import(db, import_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid import id.")
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Import not found.")
+    return {"ok": True}
+
+
+@fastapi_app.patch("/bank-imports/{import_id}")
+async def bank_imports_patch(import_id: str, payload: dict = Body(...)):
+    try:
+        session = await patch_import_rows(
+            db,
+            prop_db,
+            import_id,
+            rows_patch=payload.get("rows"),
+            confirm_all_suggested=bool(payload.get("confirmAllSuggested")),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"import": session}
+
+
+@fastapi_app.post("/bank-imports/{import_id}/save")
+async def bank_imports_save(import_id: str, payload: dict = Body(default=None)):
+    body = payload or {}
+    try:
+        session = await save_import(
+            db,
+            prop_db,
+            import_id,
+            saved_by=(body.get("savedBy") or "").strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"import": session, "saveResult": session.get("saveResult")}
+
+
+@fastapi_app.post("/bank-imports/contacts")
+async def bank_imports_create_contact(payload: dict = Body(...)):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required.")
+    try:
+        contact = await create_simple_contact(prop_db, name=name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"contact": contact}
+
 
 @fastapi_app.post("/bank-statements/from-drive-folder")
 async def process_from_drive_folder(folder_link: str = Body(...), auth_token: str = Body(...), mapping: dict = Body(None)):
