@@ -1,12 +1,15 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 # Create scheduler instance
 scheduler = AsyncIOScheduler()
+
+# Only transfer docs that are at least this old after creation
+TRANSFER_AGE = timedelta(minutes=20)
 
 # --------------------------------------------------
 # Logger setup
@@ -37,7 +40,7 @@ def _is_job_enabled() -> bool:
 async def transfer_ownership(prop_db):
     """
     Task: transfer_ownership
-    - Finds all documents updated after 15 Dec 2025
+    - Finds documents created after TRANSFER_CUTOFF_DATE and at least 20 minutes old
     - Adds original merchantId to sharedWithMerchants
     - Sets new owner
     - Sets new merchantId
@@ -62,10 +65,12 @@ async def transfer_ownership(prop_db):
         raise ValueError("TRANSFER_NEW_MERCHANT_ID env var is missing")
 
     CUTOFF_DATE = _get_cutoff_date()
+    eligible_before = datetime.now(timezone.utc) - TRANSFER_AGE
 
     logger.info(
-        "Transfer config loaded | cutoff=%s | new_owner=%s | new_merchant=%s",
+        "Transfer config loaded | cutoff=%s | eligible_before=%s | new_owner=%s | new_merchant=%s",
         CUTOFF_DATE.isoformat(),
+        eligible_before.isoformat(),
         NEW_OWNER_ID,
         NEW_MERCHANT_ID,
     )
@@ -80,7 +85,7 @@ async def transfer_ownership(prop_db):
     # --------------------------------------------------
     api_docs_result = await formdatas_col.update_many(
         {
-            "metadata.createdAt": {"$gt": CUTOFF_DATE},
+            "metadata.createdAt": {"$gt": CUTOFF_DATE, "$lte": eligible_before},
             "indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo", "custom-mh41lln9v"]},
             "metadata.createdBy": {"$regex": "^api-token-"},
             "metadata.apiShared": {"$ne": True},
@@ -157,7 +162,7 @@ async def transfer_ownership(prop_db):
     result = await formdatas_col.update_many(
         {
             "$and": [
-                {"metadata.createdAt": {"$gt": CUTOFF_DATE}},
+                {"metadata.createdAt": {"$gt": CUTOFF_DATE, "$lte": eligible_before}},
                 {"indicator": {"$in": ["contacts", "properties", "custom-wyey07pb7", "custom-a462rgbzo", "custom-mh41lln9v"]}},
                 {"$or": [
                     {"metadata.createdBy": {"$not": {"$regex": "^api-token-"}}},
@@ -186,7 +191,7 @@ async def transfer_ownership(prop_db):
     logger.info("Processing custom-wyey07pb7 text updates")
     cursor = formdatas_col.find(
         {
-            "metadata.createdAt": {"$gt": CUTOFF_DATE},
+            "metadata.createdAt": {"$gt": CUTOFF_DATE, "$lte": eligible_before},
             "metadata.ownershipTransferred": {"$eq": True},
             "indicator": "custom-wyey07pb7",
             "owner": NEW_OWNER_ID,
@@ -298,6 +303,7 @@ async def transfer_ownership(prop_db):
     tasks_result = await tasks_col.update_many(
         {
             "$and": [
+                {"metadata.createdAt": {"$gt": CUTOFF_DATE, "$lte": eligible_before}},
                 {"metadata.createdBy": {"$ne": NEW_OWNER_ID}},
                 {
                     "$or": [
