@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 import openai
 from PIL import Image
 
-EXTRACTION_MODEL = os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-4o")
+EXTRACTION_MODEL = os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.4")
 _openai_client: openai.OpenAI | None = None
 
 DOCUMENT_TYPE_ELECTRICITY_BILL = "Electricity Bill"
@@ -369,16 +369,27 @@ INVOICE_EXTRACTION_SCHEMA = {
         "Leave empty if unclear."
     ),
     "company_address": (
-        "Issuer company address as printed on the invoice. Leave empty if not found."
+        "Issuer company street/city/postal address from the SELLER header only, "
+        "copied CHARACTER-FOR-CHARACTER. Do not include phone, email, AFM, or ΔΟΥ. "
+        "Do not use the customer / Bill To address. Leave empty if not found."
     ),
     "tax_office": (
-        "Tax office (Δ.Ο.Υ. / DOY / Tax Office) of the issuer. Leave empty if not found."
+        "Tax office (Δ.Ο.Υ. / ΔΟΥ / DOY) of the ISSUER from the seller header only. "
+        "Copy the printed name CHARACTER-FOR-CHARACTER (e.g. ΚΕΦΟΔΕ ΑΤΤΙΚΗΣ). "
+        "Do NOT substitute a familiar Attica DOY name (e.g. do not invent ΚΗΦΙΣΙΑΣ). "
+        "Do not use the customer's ΔΟΥ. Leave empty if not found."
     ),
     "cust_info_bill_to": (
-        "Customer / Bill To party details (name and address if present). Leave empty if not found."
+        "Customer / Bill To / Στοιχεία πελάτη details (name, profession if shown, "
+        "and address) copied as printed. Street names must be letter-accurate "
+        "(e.g. ΣΤΑΔΙΟΥ not ΣΤΑΥΡΟΥ). Leave empty if not found."
     ),
     "service_description": (
-        "Description of goods/services on the invoice line items. Leave empty if not found."
+        "Exact line-item product/service text from the Περιγραφή / Description column "
+        "only (e.g. ΑΜΟΛΥΒΔΗ 95). Copy CHARACTER-FOR-CHARACTER. "
+        "Do NOT invent a product category (never guess ΠΕΤΡΕΛΑΙΟ ΘΕΡΜΑΝΣΗΣ or similar). "
+        "Do not use issuer επάγγελμα. If multiple lines, join with ' | '. "
+        "Leave empty if the line item text cannot be read confidently."
     ),
     "service_period": (
         "Service / billing period if shown (e.g. June 2026, 01/06/2026-30/06/2026). "
@@ -389,10 +400,11 @@ INVOICE_EXTRACTION_SCHEMA = {
     ),
     "invoice_issuer": (
         "Official company or person name of the invoice issuer (seller / vendor), "
-        "copied CHARACTER-FOR-CHARACTER as printed — including every period/dot. "
+        "copied CHARACTER-FOR-CHARACTER as printed — including every letter and period/dot. "
         "CRITICAL: keep abbreviation dots. Example: if the invoice shows "
         "'ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.' return exactly 'ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.' "
         "(NOT 'ΖΑΧΟΣ Α ΣΙΑ ΟΕ'). "
+        "Preserve Latin brand spelling letter-for-letter (e.g. ARGYOIL not ARGYROL). "
         "Preserve legal-form suffixes Ο.Ε., Α.Ε., Ι.Κ.Ε., Ε.Π.Ε., O.E., S.A. with their dots. "
         "Preserve single-letter initials with their trailing dots (e.g. Α.). "
         "Do not expand, translate, title-case, strip punctuation, or otherwise rewrite. "
@@ -404,10 +416,12 @@ INVOICE_EXTRACTION_SCHEMA = {
         "Do not use invoice line-item descriptions. Leave empty if not found."
     ),
     "invoice_issue_date": (
-        "Invoice issue date. Return as YYYY-MM-DD."
+        "Invoice issue date from Ημερομηνία / Date only (not the invoice number). "
+        "Return as YYYY-MM-DD. Leave empty if unclear."
     ),
     "invoice_recipient": (
-        "Invoice recipient / buyer / billed party name. Leave empty if not found."
+        "Invoice recipient / buyer / billed party name from Στοιχεία πελάτη / Bill To. "
+        "Leave empty if not found."
     ),
     "invoice_source": (
         "Must be exactly one of: 'Solomon Invoice' or 'Third Party Invoice'. "
@@ -415,7 +429,8 @@ INVOICE_EXTRACTION_SCHEMA = {
         "Use 'Third Party Invoice' when issued by any other company. Leave empty if unclear."
     ),
     "invoice_issuer_tax_id": (
-        "Issuer Α.Φ.Μ. (AFM / Tax Number) exactly as printed. Leave empty if not found."
+        "Issuer / SELLER Α.Φ.Μ. (AFM) from the company header next to the issuer name. "
+        "Never use the customer / Bill To AFM here. Leave empty if not found."
     ),
     "issuer_email": (
         "Issuer company email address as printed on the invoice (near issuer header / "
@@ -427,31 +442,38 @@ INVOICE_EXTRACTION_SCHEMA = {
         "Leave empty if not found."
     ),
     "invoice_recipient_tax_id": (
-        "Recipient tax ID / Α.Φ.Μ. / VAT number. Leave empty if not found."
+        "Recipient / BUYER Α.Φ.Μ. under Στοιχεία πελάτη / Bill To / customer block. "
+        "Never use the issuer/seller AFM here. Leave empty if not found."
     ),
     "invoice_issued_by": (
         "Person who issued/signed/prepared the invoice if shown. Leave empty if not found."
     ),
     "invoice_number": (
-        "Invoice number / document number. Leave empty if not found."
+        "Document number from Αριθμός / Αρ. / Number (and Σειρά/Series if needed), "
+        "e.g. 6706 or ΤΔΑ 6706. "
+        "NEVER put Ημερομηνία / any DD/MM/YYYY or YYYY-MM-DD date in this field. "
+        "Leave empty if the number cannot be read confidently."
     ),
     "amount_excluding_vat": (
-        "Net amount excluding VAT. Numeric string with dot decimal. Leave empty if not found."
+        "Net amount excluding VAT from Καθαρή αξία / Net / taxable base totals. "
+        "Must come from printed totals or line net values on THIS document only. "
+        "Numeric string with dot decimal. Do not invent. Leave empty if not found."
     ),
     "vat_ratio": (
         "VAT percentage rate as a number without % sign (e.g. 24, 13, 0). Leave empty if not found."
     ),
     "vat_amount": (
-        "VAT amount in euros. Numeric string with dot decimal. Leave empty if not found."
+        "VAT amount from Αξία ΦΠΑ / VAT amount on THIS document only. "
+        "Numeric string with dot decimal. Do not invent. Leave empty if not found."
     ),
     "trx_payment_method": (
         "Payment method. Must be exactly one of: 'In Person' or 'Bank'. "
-        "Use 'Bank' for bank transfer / IBAN / deposit. Use 'In Person' for cash / in-person payment. "
-        "Leave empty if unclear."
+        "Use 'Bank' for bank transfer / IBAN / deposit. Use 'In Person' for cash / "
+        "Μετρητοίς / in-person payment. Leave empty if unclear."
     ),
     "total_amount": (
-        "Total amount including VAT / grand total payable. "
-        "Numeric string with dot decimal. Leave empty if not found."
+        "Grand total payable from Πληρωτέο / Σύνολο / Total including VAT on THIS document. "
+        "Numeric string with dot decimal. Do not invent. Leave empty if not found."
     ),
     "invest_greece_notes": (
         "Any relevant notes, remarks, or payment references from the invoice. "
@@ -839,10 +861,11 @@ Read the attached document and return ONE JSON object with exactly these keys:
 Rules:
 - Return JSON only. No markdown, no commentary.
 - Do NOT guess or infer values. Use empty string for any field you cannot confidently read.
+- Prefer an empty string over a plausible invention when text is blurry or ambiguous.
+- Copy names, addresses, tax IDs, product descriptions, and numbers CHARACTER-FOR-CHARACTER.
 - Numeric amounts must use dot as decimal separator, no currency symbols.
 - The document layout may vary by issuer — use semantic understanding, not fixed positions.
 - Support Greek and English labels and equivalent terminology.
-- Handle OCR variations and minor recognition errors.
 {extra_rules}
 """
 
@@ -954,17 +977,24 @@ def _extract_invoice(
         ),
         extra_rules="""
 - Templates vary widely — extract by meaning, not by layout or coordinates.
-- If the file contains multiple invoices, extract ONLY the first invoice.
-- Do NOT assume a specific company or template.
-- invoice_issuer is a verbatim string copy of the printed legal/company name.
+- If the file contains multiple invoices, extract ONLY the first invoice on THIS file.
+- Do NOT assume a specific company, product, DOY, or template. Never reuse values from other invoices.
+- Greek fuel/retail invoices often have TWO ΑΦΜ values and a header row with Σειρά / Αριθμός / Ημερομηνία — keep them distinct.
+- invoice_number = Αριθμός (document number only). Never use the issue date as the invoice number.
+- invoice_issue_date = Ημερομηνία only, as YYYY-MM-DD when confidently extracted.
+- invoice_issuer_tax_id = seller/header ΑΦΜ only. invoice_recipient_tax_id = customer/Bill To ΑΦΜ only. Never swap them; if unsure, leave empty.
+- invoice_issuer is a verbatim string copy of the printed legal/company name (every letter + every period).
   NEVER remove periods from abbreviations or initials.
   Wrong: "ΖΑΧΟΣ Α ΣΙΑ ΟΕ". Correct: "ΖΑΧΟΣ Α. ΣΙΑ Ο.Ε.".
+  Wrong Latin brand: "ARGYROL". Correct if printed: "ARGYOIL".
+- tax_office = issuer ΔΟΥ only, copied literally (e.g. ΚΕΦΟΔΕ). Do not substitute common names like ΚΗΦΙΣΙΑΣ.
+- service_description = Περιγραφή line-item text only. Do not invent products (e.g. heating oil) not printed on the lines.
+- amount_excluding_vat / vat_amount / total_amount must come from THIS document's totals (Καθαρή αξία / Αξία ΦΠΑ / Πληρωτέο). Do not invent amounts.
 - issuer_profession is the επάγγελμα / activity near the issuer header (not line items).
 - issuer_email and issuer_phone are the issuer's own contact details (not the recipient/bill-to).
 - trx_payer must be exactly "Customer" or "Invest Greece" (or empty).
 - invoice_source must be exactly "Solomon Invoice" or "Third Party Invoice" (or empty).
 - trx_payment_method must be exactly "In Person" or "Bank" (or empty).
-- invoice_issue_date must be YYYY-MM-DD when confidently extracted.
 - Numeric amounts use dot as decimal separator.
 """,
     )
