@@ -9,10 +9,10 @@ const MODULE_OPTIONS = [
 ];
 
 const SEARCH_PLACEHOLDERS = {
-  property: "Search by title, PID, or Mongo ObjectId",
-  contact: "Search by name, PID, or Mongo ObjectId",
-  timetable: "Search by description, property/contact, PID, or ObjectId",
-  cashflow: "Search by description, property/contact, PID, or ObjectId",
+  property: "Search by title, PID, or ID from the Prop360 link",
+  contact: "Search by name, PID, or ID from the Prop360 link",
+  timetable: "Search by description, property/contact, PID, or ID from the link",
+  cashflow: "Search by description, property/contact, PID, or ID from the link",
 };
 
 export default function UnshareEntity() {
@@ -127,8 +127,8 @@ export default function UnshareEntity() {
     <div className="max-w-3xl mx-auto mt-10 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Unshare Entity</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Select a module, find one record by ObjectId, PID, or name/title, then
-        remove it from all shared merchants.
+        Select a module, find one record by name/title, PID, or the ID from its
+        Prop360 link, then remove it from all shared merchants.
       </p>
 
       <form onSubmit={handleUnshare} className="space-y-4">
