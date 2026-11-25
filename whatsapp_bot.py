@@ -75,6 +75,11 @@ from services.recurrent_accruals import (
     search_contacts,
     search_properties,
 )
+from services.entity_unshare import (
+    ENTITY_TYPE_INDICATORS,
+    search_entities,
+    unshare_entity,
+)
 from services.bank_statement_import import (
     create_import_session,
     create_simple_contact,
@@ -2287,6 +2292,52 @@ async def get_prompt(prompt_id: str):
 
         return {"prompt_id": doc["prompt_id"], "prompt_text": doc["prompt_text"], "updated_at": doc.get("updated_at")}
 
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+
+@fastapi_app.get("/utilities/entities/search")
+async def search_entities_endpoint(
+    entity_type: str = Query(..., alias="type"),
+    q: str = Query("", min_length=0),
+    limit: int = Query(15, ge=1, le=50),
+):
+    """Search Property/Contact/Timetable/Cashflow by ObjectId, PID, or name/title."""
+    try:
+        normalized_type = (entity_type or "").strip().lower()
+        if normalized_type not in ENTITY_TYPE_INDICATORS:
+            return {
+                "error": "type must be 'property', 'contact', 'timetable', or 'cashflow'."
+            }
+
+        query_text = (q or "").strip()
+        if not query_text:
+            return {"data": []}
+
+        data = await search_entities(prop_db, normalized_type, query_text, limit)
+        return {"data": data}
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@fastapi_app.post("/utilities/entities/unshare")
+async def unshare_entity_endpoint(payload: dict = Body(...)):
+    """Clear sharedWithMerchants and sharedWith on one entity."""
+    try:
+        entity_type = (payload.get("type") or payload.get("shareType") or "").strip().lower()
+        mongo_id = payload.get("mongoId")
+        pid = payload.get("pid")
+
+        result = await unshare_entity(
+            prop_db,
+            entity_type=entity_type,
+            mongo_id=mongo_id,
+            pid=pid,
+        )
+        return result
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}

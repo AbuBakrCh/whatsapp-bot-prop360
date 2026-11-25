@@ -781,6 +781,39 @@ export async function searchProperties(q, limit = 15) {
   }
 }
 
+export async function searchEntities(type, q, limit = 15) {
+  try {
+    const response = await axios.get(`${BASE}/utilities/entities/search`, {
+      params: { type, q, limit },
+    });
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to search entities",
+    };
+  }
+}
+
+export async function unshareEntity(payload) {
+  try {
+    const response = await axios.post(
+      `${BASE}/utilities/entities/unshare`,
+      payload
+    );
+    return response.data;
+  } catch (err) {
+    return {
+      error:
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        "Failed to unshare entity",
+    };
+  }
+}
+
 export async function getRecurrentAccrualDocumentTypes() {
   try {
     const response = await axios.get(`${BASE}/recurrent-accruals/document-types`);

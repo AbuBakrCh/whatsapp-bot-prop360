@@ -44,6 +44,7 @@ import ExpiryJobsControl from './ExpiryJobsControl'
 import JobEmailRecipientsControl from './JobEmailRecipientsControl'
 import RecurrentAccruals from './RecurrentAccruals'
 import BankStatementImport from './BankStatementImport'
+import UnshareEntity from './UnshareEntity'
 
 const tools = [
   {
@@ -149,6 +150,14 @@ const tools = [
     icon: GitMerge,
     group: 'Data',
     render: () => <MergeContacts />,
+  },
+  {
+    id: 'unshare-entity',
+    label: 'Unshare Entity',
+    description: 'Remove a record from all shared merchants',
+    icon: Unlink,
+    group: 'Data',
+    render: () => <UnshareEntity />,
   },
   {
     id: 'timetables',
