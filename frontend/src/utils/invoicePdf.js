@@ -10,7 +10,7 @@ const TABLE_HEADER_BG = [246, 248, 250];
 const ROW_ALT = [251, 252, 253];
 
 export const ISSUER = {
-  name: "Muhammd Abu Bakr",
+  name: "Muhammad Abu Bakr",
   title: "Software Consultant",
   location: "Lahore, Pakistan",
   phone: "(92) 324-4181389",
@@ -31,10 +31,19 @@ export const SERVICE = {
 };
 
 export const PAYMENT = {
-  method: "Wise",
-  wisetag: "@muhammada21124",
-  link: "https://wise.com/pay/me/muhammada21124",
-  instruction: "Please make payments to m.abubakr916@gmail.com via Wise.",
+  method: "Bank Transfer (EUR only)",
+  recipientName: "Muhammad Abu Bakr",
+  recipientAddress:
+    "Pakistan, Makan number 648 Block G Mohalla Gulshan Ravi, Lahore, 54000",
+  iban: "GB71CLRB04281257274753",
+  bic: "CLRBGB22XXX",
+  accountNumber: "57274753",
+  sortCode: "042812",
+  bank: "Clear Bank",
+  bankLocation: "Based in GB",
+  bankAddress: "133 Houndsditch, LONDON, EC3A 7BX",
+  accountType: "Checking (Current)",
+  instruction: "Please make EUR transfers only to the bank details above.",
 };
 
 const NOTES = [
@@ -87,7 +96,7 @@ export function parseLocalDate(iso) {
 
 export function formatAmount(amount) {
   const n = Number(amount);
-  return `$${n.toLocaleString("en-US", {
+  return `€${n.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -310,27 +319,54 @@ export function buildInvoicePdf({ invoiceNumber, invoiceDate, amount }) {
   // —— Payment Information ——
   y = drawSectionBar(doc, "Payment Information", margin, y, contentW * 0.42);
 
-  const payCardH = 30;
+  const payPad = 4;
+  const payLeft = margin + payPad;
+  const payMid = margin + contentW * 0.52;
+  const payLine = 5.8;
+  const payValueW = contentW - payPad * 2;
+  const payCardH = 48;
   doc.setFillColor(...ACCENT_SOFT);
   doc.roundedRect(margin, y - 2, contentW, payCardH, 2, 2, "F");
 
+  let payY = y + 3.5;
+  drawLabelValue(doc, "Payment Method:", PAYMENT.method, payLeft, payY);
+  drawLabelValue(doc, "Recipient Name:", PAYMENT.recipientName, payMid, payY);
+  payY += payLine;
+  drawLabelValue(doc, "IBAN:", PAYMENT.iban, payLeft, payY);
+  drawLabelValue(doc, "BIC/SWIFT:", PAYMENT.bic, payMid, payY);
+  payY += payLine;
+  drawLabelValue(doc, "Account Number:", PAYMENT.accountNumber, payLeft, payY);
+  drawLabelValue(doc, "Sort Code:", PAYMENT.sortCode, payMid, payY);
+  payY += payLine;
   drawLabelValue(
     doc,
-    "Recipient Payment Method:",
-    PAYMENT.method,
-    margin + 4,
-    y + 5
+    "Bank:",
+    `${PAYMENT.bank} (${PAYMENT.bankLocation})`,
+    payLeft,
+    payY
   );
-  drawLabelValue(doc, "Wisetag:", PAYMENT.wisetag, margin + 4, y + 12);
-  drawLabelValue(doc, "Link:", PAYMENT.link, margin + 4, y + 19);
+  drawLabelValue(doc, "Account Type:", PAYMENT.accountType, payMid, payY);
+  payY += payLine;
+  drawLabelValue(doc, "Bank Address:", PAYMENT.bankAddress, payLeft, payY, {
+    maxValueWidth: payValueW,
+  });
+  payY += payLine;
+  drawLabelValue(
+    doc,
+    "Recipient Address:",
+    PAYMENT.recipientAddress,
+    payLeft,
+    payY,
+    { maxValueWidth: payValueW }
+  );
 
-  y += payCardH + 2;
+  y += payCardH + 3;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(8.5);
   doc.setTextColor(...MUTED);
   doc.text(PAYMENT.instruction, margin + 1, y);
 
-  y += 12;
+  y += 9;
 
   // —— Notes ——
   y = drawSectionBar(doc, "Notes", margin, y, contentW * 0.2);

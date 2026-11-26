@@ -94,7 +94,7 @@ export default function GenerateInvoice() {
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-slate-700">
-            Total Amount (USD)
+            Total Amount (EUR)
           </span>
           <input
             type="number"
