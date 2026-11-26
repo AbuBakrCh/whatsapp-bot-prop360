@@ -471,8 +471,8 @@ def generate_text_with_model(input_text, model_name=None, temperature=0.5):
 
 
 # --- Initial Load ---
-df = load_dataset_from_google_sheet(SHEET_ID)
-embeddings, texts = build_index(df)
+#df = load_dataset_from_google_sheet(SHEET_ID)
+#embeddings, texts = build_index(df)
 chat_sessions = {}
 
 # ----------------------------
@@ -3419,6 +3419,38 @@ async def export_cashflow_ledger(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+CASHFLOW_FIELD_TO_BE_SHARED = "field-1781250886138-4wcuu70z7"
+
+
+def _build_cashflow_share_filter(filters: dict, source_merchant_id: str | None = None) -> dict:
+    """
+    Build a Mongo filter for cashflows share/unshare.
+
+    Empty / unset filters have no effect. Selected filters are AND-combined.
+    """
+    cashflows_filter: dict = {
+        "indicator": "custom-a462rgbzo",
+        "status": "active",
+    }
+    if source_merchant_id:
+        cashflows_filter["merchantId"] = source_merchant_id
+
+    and_conditions: list[dict] = []
+
+    yes_no_fields = {
+        "toBeShared": CASHFLOW_FIELD_TO_BE_SHARED,
+    }
+    for key, field_id in yes_no_fields.items():
+        value = filters.get(key)
+        if isinstance(value, str) and value.strip() in ("Yes", "No"):
+            and_conditions.append({f"data.{field_id}": value.strip()})
+
+    if and_conditions:
+        cashflows_filter["$and"] = and_conditions
+
+    return cashflows_filter
+
+
 @fastapi_app.post("/cashflows/add")
 async def add_cashflows(payload: dict):
     """
@@ -3427,15 +3459,13 @@ async def add_cashflows(payload: dict):
     Steps:
     - Get source merchant by email → merchantId
     - Get target merchants by email → merchantIds
-    - Fetch cashflows where:
-        indicator = "custom-cashflows"
-        status = "active"
-        merchantId = source merchantId
+    - Filter cashflows by indicator, status, merchantId, and optional field filters
     - Add target merchantIds to sharedWithMerchants
     """
     try:
         source_email = payload.get("sourceMerchantEmail")
         target_emails = payload.get("targetMerchantEmails", [])
+        filters = payload.get("filters", {}) or {}
 
         if not source_email or not target_emails:
             return {
@@ -3475,13 +3505,9 @@ async def add_cashflows(payload: dict):
         cashflows_col = prop_db.formdatas
 
         # -------------------------------------
-        # Cashflows filter
+        # Build cashflows filter
         # -------------------------------------
-        cashflows_filter = {
-            "indicator": "custom-a462rgbzo",
-            "status": "active",
-            "merchantId": source_merchant_id
-        }
+        cashflows_filter = _build_cashflow_share_filter(filters, source_merchant_id)
 
         # -------------------------------------
         # Query cashflows
@@ -3491,7 +3517,7 @@ async def add_cashflows(payload: dict):
 
         if not cashflows:
             return {
-                "message": "No cashflows found for the source merchant.",
+                "message": "No cashflows matched the given filters.",
                 "updated": 0
             }
 
@@ -3511,7 +3537,8 @@ async def add_cashflows(payload: dict):
             "message": "Cashflows updated successfully.",
             "updated": result.modified_count,
             "sourceMerchantId": source_merchant_id,
-            "targetMerchantIds": target_merchant_ids
+            "targetMerchantIds": target_merchant_ids,
+            "filtersApplied": cashflows_filter,
         }
 
     except Exception as e:
@@ -3526,15 +3553,13 @@ async def delete_cashflows(payload: dict):
     Steps:
     - Get source merchant by email → merchantId (optional)
     - Get target merchants by email → merchantIds
-    - Fetch cashflows where:
-        indicator = "custom-cashflows"
-        status = "active"
-        merchantId = source merchantId (if provided)
+    - Filter cashflows by indicator, status, optional merchantId, and optional field filters
     - Remove target merchantIds from sharedWithMerchants
     """
     try:
         source_email = payload.get("sourceMerchantEmail")
         target_emails = payload.get("targetMerchantEmails", [])
+        filters = payload.get("filters", {}) or {}
 
         if not target_emails:
             return {"error": "Target merchant emails are required."}
@@ -3577,13 +3602,7 @@ async def delete_cashflows(payload: dict):
         # -------------------------------------
         # Build cashflows filter
         # -------------------------------------
-        cashflows_filter = {
-            "indicator": "custom-a462rgbzo",
-            "status": "active"
-        }
-
-        if source_merchant_id:
-            cashflows_filter["merchantId"] = source_merchant_id
+        cashflows_filter = _build_cashflow_share_filter(filters, source_merchant_id)
 
         # -------------------------------------
         # Query cashflows
@@ -3593,7 +3612,7 @@ async def delete_cashflows(payload: dict):
 
         if not cashflows:
             return {
-                "message": "No cashflows matched the given criteria.",
+                "message": "No cashflows matched the given filters.",
                 "updated": 0
             }
 
@@ -3613,7 +3632,8 @@ async def delete_cashflows(payload: dict):
             "message": "Cashflows updated successfully (deleted access).",
             "updated": result.modified_count,
             "sourceMerchantId": source_merchant_id,
-            "targetMerchantIdsRemoved": target_merchant_ids
+            "targetMerchantIdsRemoved": target_merchant_ids,
+            "filtersApplied": cashflows_filter,
         }
 
     except Exception as e:

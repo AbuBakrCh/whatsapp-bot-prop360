@@ -1,12 +1,43 @@
 import React, { useState } from "react";
 import { addCashflows, deleteCashflows } from "../api";
 
+const YES_NO_OPTIONS = ["Yes", "No"];
+
+const emptyFilters = () => ({
+  toBeShared: "",
+});
+
+function YesNoSelect({ label, value, onChange }) {
+  return (
+    <label className="flex flex-col gap-1 text-gray-700">
+      <span className="text-sm font-medium">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="border border-slate-300 rounded-md px-3 py-2 bg-white"
+      >
+        <option value="">Any</option>
+        {YES_NO_OPTIONS.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export default function ManageCashflows() {
   const [sourceMerchantEmail, setSourceMerchantEmail] = useState("");
   const [targetMerchantEmails, setTargetMerchantEmails] = useState("");
+  const [filters, setFilters] = useState(emptyFilters);
 
   const [loading, setLoading] = useState(false);
   const [responseMsg, setResponseMsg] = useState("");
+
+  const updateFilter = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleProcess = async (actionType) => {
     if (!targetMerchantEmails) {
@@ -24,11 +55,14 @@ export default function ManageCashflows() {
 
     try {
       const payload = {
-        sourceMerchantEmail,
+        sourceMerchantEmail: sourceMerchantEmail.trim().toLowerCase(),
         targetMerchantEmails: targetMerchantEmails
           .split(",")
-          .map((email) => email.trim())
+          .map((email) => email.trim().toLowerCase())
           .filter(Boolean),
+        filters: {
+          toBeShared: filters.toBeShared || undefined,
+        },
       };
 
       let res;
@@ -42,7 +76,11 @@ export default function ManageCashflows() {
       if (res?.error) {
         setResponseMsg(res.error);
       } else if (res?.message) {
-        setResponseMsg(res.message);
+        setResponseMsg(
+          res.updated !== undefined
+            ? `${res.message} (updated: ${res.updated})`
+            : res.message
+        );
       } else {
         setResponseMsg("Operation completed.");
       }
@@ -76,6 +114,30 @@ export default function ManageCashflows() {
           onChange={(e) => setTargetMerchantEmails(e.target.value)}
           placeholder="Target Merchant Emails (comma separated)"
           className="border border-slate-300 rounded-md px-3 py-2 h-24 resize-none"
+        />
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xl font-semibold text-gray-700">Filters</h3>
+        <button
+          type="button"
+          onClick={() => setFilters(emptyFilters())}
+          className="text-sm text-slate-500 hover:text-slate-700 underline"
+        >
+          Reset filters
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Leave filters empty / on Any to ignore them. Selected filters are
+        combined with AND.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <YesNoSelect
+          label="To Be Shared"
+          value={filters.toBeShared}
+          onChange={(v) => updateFilter("toBeShared", v)}
         />
       </div>
 
